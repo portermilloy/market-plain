@@ -17,7 +17,7 @@ interface MoverItem {
 
 interface Cache { gainers: MoverItem[]; losers: MoverItem[]; ts: number }
 let cache: Cache | null = null;
-const TTL = 5 * 60 * 1000;
+const TTL = 30 * 60 * 1000;
 
 export async function GET() {
   if (cache && Date.now() - cache.ts < TTL) {

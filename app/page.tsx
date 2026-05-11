@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import ArticlePanel from "./components/ArticlePanel";
+import CryptoWidget from "./components/CryptoWidget";
 import EarningsCalendar from "./components/EarningsCalendar";
 import NewsSection, { type ArticleInfo } from "./components/NewsSection";
 import Portfolio from "./components/Portfolio";
@@ -57,6 +58,8 @@ export default function Home() {
       <SectorHeatmap />
 
       <EarningsCalendar />
+
+      <CryptoWidget />
 
       <div className={`grid gap-6 items-start grid-cols-1 ${selectedTicker ? "lg:grid-cols-3" : "md:grid-cols-2"}`}>
         <Portfolio />

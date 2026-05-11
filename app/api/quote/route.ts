@@ -17,7 +17,13 @@ export async function GET(request: Request) {
   }
 
   try {
-    const q = (await yahooFinance.quote(ticker.toUpperCase())) as Record<string, unknown>;
+    let q: Record<string, unknown>;
+    try {
+      q = (await yahooFinance.quote(ticker.toUpperCase())) as Record<string, unknown>;
+    } catch {
+      await new Promise((r) => setTimeout(r, 1000));
+      q = (await yahooFinance.quote(ticker.toUpperCase())) as Record<string, unknown>;
+    }
 
     return Response.json({
       symbol: q.symbol,

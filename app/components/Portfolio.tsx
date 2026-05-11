@@ -9,13 +9,26 @@ import {
   PieChart,
   ResponsiveContainer,
   Tooltip,
+  XAxis,
   YAxis,
 } from "recharts";
 import TickerAutocomplete from "./TickerAutocomplete";
 
 const STORAGE_KEY = "portfolio";
 const HISTORY_KEY = "portfolio_history";
-const MAX_HISTORY = 90;
+const MAX_HISTORY = 730;
+
+type ChartRange = "1D" | "1W" | "1M" | "3M" | "6M" | "1Y" | "ALL";
+const CHART_RANGES: ChartRange[] = ["1D", "1W", "1M", "3M", "6M", "1Y", "ALL"];
+
+function filterHistory(history: PortfolioSnapshot[], range: ChartRange): PortfolioSnapshot[] {
+  if (range === "ALL") return history;
+  const days: Record<ChartRange, number> = { "1D": 1, "1W": 7, "1M": 30, "3M": 90, "6M": 180, "1Y": 365, "ALL": 0 };
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days[range]);
+  const cutoffStr = cutoff.toLocaleDateString("en-CA");
+  return history.filter((p) => p.date >= cutoffStr);
+}
 
 interface Position {
   ticker: string;
@@ -60,6 +73,7 @@ export default function Portfolio() {
   const [sharesInput, setSharesInput] = useState("");
   const [portfolioHistory, setPortfolioHistory] = useState<PortfolioSnapshot[]>([]);
   const [isPro, setIsPro] = useState(false);
+  const [chartRange, setChartRange] = useState<ChartRange>("ALL");
   const [summary, setSummary] = useState<string | null>(null);
   const [summaryStatus, setSummaryStatus] = useState<"idle" | "loading" | "error">("idle");
   const sharesRef = useRef<HTMLInputElement>(null);
@@ -236,6 +250,11 @@ export default function Portfolio() {
   useEffect(() => {
     if (!allLoaded || positions.length === 0 || totalValue === 0) return;
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+    const hasCrypto = positions.some((p) => isCrypto(p.ticker));
+    if (!hasCrypto) {
+      const dayOfWeek = new Date(today + "T12:00:00").getDay();
+      if (dayOfWeek === 0 || dayOfWeek === 6) return; // skip weekends for stocks-only portfolios
+    }
     setPortfolioHistory((prev) => {
       if (prev.some((p) => p.date === today)) return prev;
       const next = [...prev, { date: today, value: totalValue }]
@@ -444,31 +463,56 @@ export default function Portfolio() {
                 )}
               </div>
 
-              {portfolioHistory.length >= 2 && (
-                <div className="mt-4">
-                  <p className="text-xs text-zinc-600 mb-1.5">Portfolio value over time</p>
-                  <ResponsiveContainer width="100%" height={56}>
-                    <AreaChart data={portfolioHistory} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
-                      <YAxis domain={["dataMin - 1", "dataMax + 1"]} hide />
-                      <Tooltip
-                        contentStyle={{ background: "#18181b", border: "1px solid #3f3f46", borderRadius: 6, fontSize: 11 }}
-                        itemStyle={{ color: "#e4e4e7" }}
-                        formatter={(v: number) => [currency(v), "Value"]}
-                        labelFormatter={(l: string) => new Date(l).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })}
-                      />
-                      <Area
-                        type="monotone"
-                        dataKey="value"
-                        stroke="#6366f1"
-                        fill="#6366f1"
-                        fillOpacity={0.15}
-                        dot={false}
-                        isAnimationActive={false}
-                      />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
+              {portfolioHistory.length >= 2 && (() => {
+                const filtered = filterHistory(portfolioHistory, chartRange);
+                return (
+                  <div className="mt-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-xs text-zinc-600">Portfolio value over time</p>
+                      <div className="flex gap-0.5">
+                        {CHART_RANGES.map((r) => (
+                          <button
+                            key={r}
+                            onClick={() => setChartRange(r)}
+                            className={`px-1.5 py-0.5 text-xs rounded transition-colors ${
+                              chartRange === r
+                                ? "bg-zinc-700 text-white"
+                                : "text-zinc-600 hover:text-zinc-400"
+                            }`}
+                          >
+                            {r}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {filtered.length >= 2 ? (
+                      <ResponsiveContainer width="100%" height={72}>
+                        <AreaChart data={filtered} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
+                          <XAxis dataKey="date" hide />
+                          <YAxis domain={["dataMin - 1", "dataMax + 1"]} hide />
+                          <Tooltip
+                            contentStyle={{ background: "#18181b", border: "1px solid #3f3f46", borderRadius: 6, fontSize: 11 }}
+                            itemStyle={{ color: "#e4e4e7" }}
+                            formatter={(v: number) => [currency(v), "Value"]}
+                            labelFormatter={(l: string) => new Date(l).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })}
+                          />
+                          <Area
+                            type="monotone"
+                            dataKey="value"
+                            stroke="#6366f1"
+                            fill="#6366f1"
+                            fillOpacity={0.15}
+                            dot={false}
+                            isAnimationActive={false}
+                          />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <p className="text-xs text-zinc-600 text-center py-4">Not enough data for this range</p>
+                    )}
+                  </div>
+                );
+              })()}
             </>
           ) : (
             <div className="animate-pulse flex flex-col gap-2">

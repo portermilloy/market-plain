@@ -267,8 +267,7 @@ export default function CryptoPage() {
       <div className="rounded-lg border border-zinc-800 overflow-hidden">
         {/* Column headers */}
         <div
-          className="grid items-center px-4 py-2 border-b border-zinc-800 text-xs font-medium text-zinc-500 uppercase tracking-wider"
-          style={{ gridTemplateColumns: "2rem 1fr auto auto auto auto" }}
+          className="grid items-center px-4 py-2 border-b border-zinc-800 text-xs font-medium text-zinc-500 uppercase tracking-wider [grid-template-columns:2rem_1fr_6rem_7.5rem] sm:[grid-template-columns:2rem_1fr_5.5rem_6rem_7.5rem] md:[grid-template-columns:2rem_1fr_5.5rem_6rem_7.5rem_7rem]"
         >
           <span className="text-right">#</span>
           <span className="pl-2">Coin</span>
@@ -306,8 +305,7 @@ export default function CryptoPage() {
             <div key={coin.symbol} className="border-b border-zinc-800 last:border-b-0">
               {/* Table row */}
               <div
-                className="grid items-center px-4 py-3 hover:bg-zinc-900/60 transition-colors cursor-pointer"
-                style={{ gridTemplateColumns: "2rem 1fr auto auto auto auto" }}
+                className="grid items-center px-4 py-3 hover:bg-zinc-900/60 transition-colors cursor-pointer [grid-template-columns:2rem_1fr_6rem_7.5rem] sm:[grid-template-columns:2rem_1fr_5.5rem_6rem_7.5rem] md:[grid-template-columns:2rem_1fr_5.5rem_6rem_7.5rem_7rem]"
                 onClick={() => handleExpand(coin.symbol)}
               >
                 <span className="text-xs text-zinc-600 text-right">{i + 1}</span>
