@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { getRefreshInterval } from "../lib/marketHours";
 import {
   Area,
   ComposedChart,
@@ -227,7 +228,7 @@ export default function CryptoPage() {
       });
     }
     loadQuotes();
-    const id = setInterval(loadQuotes, 60_000);
+    const id = setInterval(loadQuotes, getRefreshInterval(60_000));
     return () => clearInterval(id);
   }, []);
 

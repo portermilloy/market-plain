@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import MarketStatus from "./components/MarketStatus";
 import NavLinks from "./components/NavLinks";
+import { ProProvider } from "./context/ProContext";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -42,7 +43,7 @@ export default function RootLayout({
           </div>
         </header>
         <main className="flex-1 mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
-          {children}
+          <ProProvider>{children}</ProProvider>
         </main>
       </body>
     </html>

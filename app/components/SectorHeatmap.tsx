@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { getRefreshInterval } from "../lib/marketHours";
 
 const SECTORS = [
   { name: "Technology", ticker: "XLK" },
@@ -42,8 +43,9 @@ export default function SectorHeatmap() {
   const [sectors, setSectors] = useState<SectorData[]>(
     SECTORS.map((s) => ({ ...s, changePercent: null, status: "loading" as const }))
   );
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  useEffect(() => {
+  function fetchAll() {
     SECTORS.forEach(({ ticker }) => {
       fetch(`/api/quote?ticker=${ticker}`)
         .then((r) => r.json())
@@ -68,6 +70,13 @@ export default function SectorHeatmap() {
           )
         );
     });
+    setLastUpdated(new Date());
+  }
+
+  useEffect(() => {
+    fetchAll();
+    const id = setInterval(fetchAll, getRefreshInterval(60_000));
+    return () => clearInterval(id);
   }, []);
 
   return (
@@ -92,6 +101,11 @@ export default function SectorHeatmap() {
           </div>
         ))}
       </div>
+      {lastUpdated && (
+        <p className="mt-2 text-right text-xs text-zinc-600">
+          Updated {lastUpdated.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+        </p>
+      )}
     </div>
   );
 }
