@@ -24,3 +24,41 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* ─── Light mode ────────────────────────────────────────────────────────────── */
+html.light { color-scheme: light; background-color: #ffffff; }
+
+html.light body { background-color: #e8edf2; color: #0f172a; }
+
+/* Backgrounds */
+html.light .bg-zinc-950              { background-color: #e8edf2 !important; }
+html.light .bg-zinc-900              { background-color: #ffffff !important; }
+html.light .bg-zinc-800              { background-color: #f1f5f9 !important; }
+html.light .bg-zinc-700              { background-color: #e2e8f0 !important; }
+html.light .hover\:bg-zinc-900:hover { background-color: #f1f5f9 !important; }
+html.light .hover\:bg-zinc-800:hover { background-color: #e8edf2 !important; }
+html.light .hover\:bg-zinc-700:hover { background-color: #e2e8f0 !important; }
+
+/* Borders */
+html.light .border-zinc-800          { border-color: #7f8ea3 !important; }
+html.light .border-zinc-700          { border-color: #5b6f85 !important; }
+html.light .border-zinc-600          { border-color: #475569 !important; }
+html.light .divide-zinc-800 > :not([hidden]) ~ :not([hidden])     { border-color: #7f8ea3 !important; }
+html.light .divide-zinc-800\/60 > :not([hidden]) ~ :not([hidden]) { border-color: rgba(127,142,163,0.5) !important; }
+
+/* Text */
+html.light .text-white               { color: #0f172a !important; }
+html.light .text-zinc-100            { color: #0f172a !important; }
+html.light .text-zinc-200            { color: #1e293b !important; }
+html.light .text-zinc-300            { color: #2d3f55 !important; }
+html.light .text-zinc-400            { color: #3d5166 !important; }
+html.light .text-zinc-500            { color: #526070 !important; }
+html.light .text-zinc-600            { color: #64748b !important; }
+html.light .hover\:text-white:hover    { color: #0f172a !important; }
+html.light .hover\:text-zinc-100:hover { color: #0f172a !important; }
+html.light .hover\:text-zinc-300:hover { color: #2d3f55 !important; }
+html.light .hover\:text-red-400:hover  { color: #dc2626 !important; }
+
+/* Recharts tooltip */
+html.light .recharts-default-tooltip { background-color: #ffffff !important; border-color: #7f8ea3 !important; }
+

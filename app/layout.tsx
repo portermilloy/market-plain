@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import MarketStatus from "./components/MarketStatus";
-import NavLinks from "./components/NavLinks";
+import ThemedHeader from "./components/ThemedHeader";
 import { ProProvider } from "./context/ProContext";
+import { ThemeProvider } from "./context/ThemeContext";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -30,21 +30,13 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-zinc-950 text-zinc-100 overflow-x-hidden">
-        <header className="border-b border-zinc-800 bg-zinc-950">
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-            <div className="flex h-14 items-center justify-between gap-4">
-              <span className="text-lg font-semibold tracking-tight text-white shrink-0">
-                Market Plain
-              </span>
-              <NavLinks />
-              <MarketStatus />
-            </div>
-          </div>
-        </header>
-        <main className="flex-1 mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
-          <ProProvider>{children}</ProProvider>
-        </main>
+      <body suppressHydrationWarning className="min-h-full flex flex-col bg-zinc-950 text-zinc-100 overflow-x-hidden">
+        <ThemeProvider>
+          <ThemedHeader />
+          <main className="flex-1 mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
+            <ProProvider>{children}</ProProvider>
+          </main>
+        </ThemeProvider>
       </body>
     </html>
   );

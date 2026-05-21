@@ -33,8 +33,8 @@
 - [x] **12** — Add search history (last 5 tickers) to `TickerAutocomplete` via localStorage
 - [x] **13** — Add first-time onboarding overlay (3-step card, `onboarding-complete` localStorage key)
 - [x] **14** — Add price alerts to Watchlist (bell icon, popover, toast + Notification API)
-- [ ] **15** — Add dark/light mode toggle in header; `ThemeContext`; CSS variable overrides in `globals.css`
-- [ ] **16** — Add landing page at `/`; move dashboard to `/dashboard`
+- [x] **15** — Add dark/light mode toggle in header; `ThemeContext`; CSS variable overrides in `globals.css`
+- [x] **16** — Add landing page at `/`; move dashboard to `/dashboard`
 - [ ] **17** — Integrate Stripe for Pro payments (checkout session, webhook, real Pro token)
 
 ---

@@ -33,7 +33,7 @@ export default function UpgradePage() {
       </div>
 
       <Link
-        href="/"
+        href="/dashboard"
         className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors text-center"
       >
         ← Back to dashboard
