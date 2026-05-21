@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { generateAuthToken } from "../lib/authToken";
+import { getRefreshInterval } from "../lib/marketHours";
+import { useIsPro, useProToken } from "../context/ProContext";
 import {
   Area,
   Bar,
@@ -307,14 +310,16 @@ export default function Watchlist({
   });
   const [input, setInput] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
-  const [isPro, setIsPro] = useState(false);
-  const [explanation, setExplanation] = useState<string | null>(null);
-  const [explainStatus, setExplainStatus] = useState<"idle" | "loading" | "error">("idle");
+  const isPro = useIsPro();
+  const proToken = useProToken();
+  const [explanations, setExplanations] = useState<Record<string, string>>({});
+  const [explainStatuses, setExplainStatuses] = useState<Record<string, "idle" | "loading" | "error">>({});
   const [limitError, setLimitError] = useState(false);
-
-  useEffect(() => {
-    setIsPro(localStorage.getItem("isPro") === "true");
-  }, []);
+  const [alerts, setAlerts] = useState<Record<string, { price: number; direction: "above" | "below" }>>({});
+  const alertsRef = useRef(alerts);
+  const [popoverTicker, setPopoverTicker] = useState<string | null>(null);
+  const [alertInputs, setAlertInputs] = useState<Record<string, { price: string; direction: "above" | "below" }>>({});
+  const [toasts, setToasts] = useState<{ id: number; ticker: string; currentPrice: number; targetPrice: number; direction: "above" | "below" }[]>([]);
 
   useEffect(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
@@ -341,9 +346,60 @@ export default function Watchlist({
     if (tickers.length === 0) return;
     const interval = setInterval(() => {
       tickers.forEach((ticker) => fetchQuote(ticker, setQuotes));
-    }, 60_000);
+    }, getRefreshInterval(60_000));
     return () => clearInterval(interval);
   }, [tickers]);
+
+  // Keep alertsRef in sync so the quotes effect below avoids stale closure
+  useEffect(() => { alertsRef.current = alerts; }, [alerts]);
+
+  // Load saved alerts from localStorage
+  useEffect(() => {
+    const stored = localStorage.getItem("watchlist-alerts");
+    if (stored) {
+      try { setAlerts(JSON.parse(stored)); } catch { /* ignore */ }
+    }
+  }, []);
+
+  // Check for triggered alerts whenever quotes update
+  useEffect(() => {
+    if (Object.keys(quotes).length === 0) return;
+    const currentAlerts = alertsRef.current;
+    const triggered: { ticker: string; currentPrice: number; targetPrice: number; direction: "above" | "below" }[] = [];
+
+    for (const [ticker, alert] of Object.entries(currentAlerts)) {
+      const qs = quotes[ticker];
+      if (qs?.status !== "ok" || qs.data.price === null) continue;
+      const p = qs.data.price;
+      if (
+        (alert.direction === "above" && p >= alert.price) ||
+        (alert.direction === "below" && p <= alert.price)
+      ) {
+        triggered.push({ ticker, currentPrice: p, targetPrice: alert.price, direction: alert.direction });
+      }
+    }
+
+    if (triggered.length === 0) return;
+
+    triggered.forEach(({ ticker, currentPrice, targetPrice, direction }) => {
+      const id = Date.now() + Math.random();
+      setToasts((prev) => [...prev, { id, ticker, currentPrice, targetPrice, direction }]);
+      setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 6000);
+
+      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+        new Notification(`${ticker} alert triggered`, {
+          body: `${ticker} hit $${currentPrice.toFixed(2)} — ${direction} $${targetPrice.toFixed(2)} target reached`,
+        });
+      }
+
+      setAlerts((prev) => {
+        const next = { ...prev };
+        delete next[ticker];
+        localStorage.setItem("watchlist-alerts", JSON.stringify(next));
+        return next;
+      });
+    });
+  }, [quotes]); // intentionally watches quotes only; alertsRef avoids stale closure
 
   function persist(next: string[]) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
@@ -382,6 +438,54 @@ export default function Watchlist({
       delete next[ticker];
       return next;
     });
+    setExplanations((prev) => {
+      const next = { ...prev };
+      delete next[ticker];
+      return next;
+    });
+    setExplainStatuses((prev) => {
+      const next = { ...prev };
+      delete next[ticker];
+      return next;
+    });
+    setAlerts((prev) => {
+      const next = { ...prev };
+      delete next[ticker];
+      localStorage.setItem("watchlist-alerts", JSON.stringify(next));
+      return next;
+    });
+  }
+
+  function persistAlerts(next: Record<string, { price: number; direction: "above" | "below" }>) {
+    localStorage.setItem("watchlist-alerts", JSON.stringify(next));
+    setAlerts(next);
+  }
+
+  function setAlert(ticker: string, price: number, direction: "above" | "below") {
+    persistAlerts({ ...alerts, [ticker]: { price, direction } });
+  }
+
+  function clearAlert(ticker: string) {
+    const next = { ...alerts };
+    delete next[ticker];
+    persistAlerts(next);
+  }
+
+  function openAlertPopover(e: React.MouseEvent, ticker: string, currentPrice: number | null) {
+    e.stopPropagation();
+    if (popoverTicker === ticker) {
+      setPopoverTicker(null);
+      return;
+    }
+    const existing = alerts[ticker];
+    setAlertInputs((prev) => ({
+      ...prev,
+      [ticker]: {
+        price: existing ? existing.price.toString() : currentPrice ? currentPrice.toFixed(2) : "",
+        direction: existing?.direction ?? "above",
+      },
+    }));
+    setPopoverTicker(ticker);
   }
 
   function toggleExpanded(ticker: string) {
@@ -392,8 +496,6 @@ export default function Watchlist({
       setExpandedTicker(ticker);
       setExpandedRange("1d");
       setExpandedChartData({ status: "loading" });
-      setExplanation(null);
-      setExplainStatus("idle");
       fetch(`/api/history?ticker=${ticker}&range=1d`)
         .then((r) => r.json())
         .then((res: { data?: HistoryPoint[]; error?: string }) => {
@@ -423,6 +525,29 @@ export default function Watchlist({
   }
 
   return (
+    <>
+    {toasts.length > 0 && (
+      <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
+        {toasts.map((t) => (
+          <div key={t.id} className="pointer-events-auto flex items-center gap-3 bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 shadow-2xl min-w-[260px]">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className={`w-3.5 h-3.5 shrink-0 ${t.direction === "above" ? "text-emerald-400" : "text-red-400"}`}>
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+            </svg>
+            <div className="flex-1 min-w-0">
+              <span className="text-xs font-semibold text-white">{t.ticker}</span>
+              <span className="text-xs text-zinc-400"> hit ${t.currentPrice.toFixed(2)}</span>
+              <p className="text-xs text-zinc-500">{t.direction} ${t.targetPrice.toFixed(2)} target reached</p>
+            </div>
+            <button
+              onClick={() => setToasts((prev) => prev.filter((toast) => toast.id !== t.id))}
+              className="text-zinc-600 hover:text-zinc-300 transition-colors shrink-0"
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+      </div>
+    )}
     <div className="rounded-lg border border-zinc-800">
       <div className="px-4 py-3 border-b border-zinc-800">
         <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider">
@@ -560,6 +685,17 @@ export default function Watchlist({
                   </div>
 
                   <button
+                    onClick={(e) => openAlertPopover(e, ticker, data.price)}
+                    className={`transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100 ${alerts[ticker] ? "text-amber-400" : "text-zinc-600 hover:text-zinc-300"}`}
+                    aria-label={`Set alert for ${ticker}`}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill={alerts[ticker] ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
+                      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                      <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                    </svg>
+                  </button>
+
+                  <button
                     onClick={(e) => {
                       e.stopPropagation();
                       removeTicker(ticker);
@@ -571,6 +707,59 @@ export default function Watchlist({
                   </button>
                 </div>
               </div>
+
+              {popoverTicker === ticker && (
+                <div
+                  className="px-4 py-3 bg-zinc-900 flex flex-wrap items-center gap-2.5 border-zinc-800"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <span className="text-xs text-zinc-500">Alert when</span>
+                  <div className="flex gap-1">
+                    {(["above", "below"] as const).map((dir) => (
+                      <button
+                        key={dir}
+                        onClick={() => setAlertInputs((prev) => ({ ...prev, [ticker]: { ...prev[ticker], direction: dir } }))}
+                        className={`text-xs px-2 py-1 rounded transition-colors ${alertInputs[ticker]?.direction === dir ? "bg-zinc-700 text-white" : "text-zinc-500 hover:text-zinc-300"}`}
+                      >
+                        {dir}
+                      </button>
+                    ))}
+                  </div>
+                  <input
+                    type="number"
+                    value={alertInputs[ticker]?.price ?? ""}
+                    onChange={(e) => setAlertInputs((prev) => ({ ...prev, [ticker]: { ...prev[ticker], price: e.target.value } }))}
+                    placeholder="price"
+                    className="w-20 bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-zinc-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  />
+                  <div className="flex gap-2 ml-auto">
+                    {alerts[ticker] && (
+                      <button
+                        onClick={() => { clearAlert(ticker); setPopoverTicker(null); }}
+                        className="text-xs text-zinc-500 hover:text-red-400 transition-colors"
+                      >
+                        Clear
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        const input = alertInputs[ticker];
+                        if (!input?.price) return;
+                        const price = parseFloat(input.price);
+                        if (isNaN(price) || price <= 0) return;
+                        if (typeof Notification !== "undefined" && Notification.permission === "default") {
+                          Notification.requestPermission();
+                        }
+                        setAlert(ticker, price, input.direction ?? "above");
+                        setPopoverTicker(null);
+                      }}
+                      className="text-xs font-medium text-white bg-zinc-700 hover:bg-zinc-600 transition-colors rounded px-3 py-1"
+                    >
+                      Set alert
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {isExpanded && (
                 <div className="px-4 py-4 bg-zinc-900">
@@ -682,25 +871,30 @@ export default function Watchlist({
                         </svg>
                         <span>Explain this move — Pro feature</span>
                       </div>
-                    ) : explanation ? (
-                      <p className="text-xs text-zinc-400 leading-relaxed">{explanation}</p>
-                    ) : explainStatus === "loading" ? (
+                    ) : explanations[ticker] ? (
+                      <p className="text-xs text-zinc-400 leading-relaxed">{explanations[ticker]}</p>
+                    ) : explainStatuses[ticker] === "loading" ? (
                       <p className="text-xs text-zinc-500 animate-pulse">Generating explanation…</p>
-                    ) : explainStatus === "error" ? (
+                    ) : explainStatuses[ticker] === "error" ? (
                       <p className="text-xs text-zinc-500">Could not generate explanation.</p>
                     ) : (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           if (!data.price || data.changePercent === null) return;
-                          setExplainStatus("loading");
-                          fetch(`/api/explain?ticker=${data.symbol}&price=${data.price}&changePercent=${data.changePercent}`, { headers: { "x-app-client": "market-plain" } })
+                          setExplainStatuses((prev) => ({ ...prev, [ticker]: "loading" }));
+                          generateAuthToken().then((token) =>
+                          fetch(`/api/explain?ticker=${data.symbol}&price=${data.price}&changePercent=${data.changePercent}`, { headers: { Authorization: `Bearer ${token}`, "X-Pro-Token": proToken ?? "" } }))
                             .then((r) => r.json())
                             .then((res: { explanation?: string; error?: string }) => {
-                              if (res.error || !res.explanation) setExplainStatus("error");
-                              else { setExplanation(res.explanation); setExplainStatus("idle"); }
+                              if (res.error || !res.explanation) {
+                                setExplainStatuses((prev) => ({ ...prev, [ticker]: "error" }));
+                              } else {
+                                setExplanations((prev) => ({ ...prev, [ticker]: res.explanation! }));
+                                setExplainStatuses((prev) => ({ ...prev, [ticker]: "idle" }));
+                              }
                             })
-                            .catch(() => setExplainStatus("error"));
+                            .catch(() => setExplainStatuses((prev) => ({ ...prev, [ticker]: "error" })));
                         }}
                         className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
                       >
@@ -730,5 +924,6 @@ export default function Watchlist({
         )}
       </div>
     </div>
+    </>
   );
 }

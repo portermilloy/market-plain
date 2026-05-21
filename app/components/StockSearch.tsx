@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { generateAuthToken } from "../lib/authToken";
+import { getRefreshInterval } from "../lib/marketHours";
+import { useIsPro, useProToken } from "../context/ProContext";
 import {
   Area,
   AreaChart,
@@ -40,6 +43,12 @@ interface HistoryPoint {
   close: number;
 }
 
+interface MergedChartPoint {
+  date: string;
+  close: number;
+  compareClose?: number;
+}
+
 type QuoteState =
   | { status: "idle" }
   | { status: "loading" }
@@ -76,35 +85,111 @@ function isPositive(data: QuoteData): boolean {
   return val !== null && val >= 0;
 }
 
+function pearsonCorrelation(primary: HistoryPoint[], compare: HistoryPoint[]): number {
+  const n = Math.min(primary.length, compare.length);
+  if (n < 3) return 0;
+
+  const ret1: number[] = [];
+  const ret2: number[] = [];
+  for (let i = 1; i < n; i++) {
+    ret1.push((primary[i].close - primary[i - 1].close) / primary[i - 1].close);
+    ret2.push((compare[i].close - compare[i - 1].close) / compare[i - 1].close);
+  }
+
+  const m = ret1.length;
+  const mean1 = ret1.reduce((a, b) => a + b, 0) / m;
+  const mean2 = ret2.reduce((a, b) => a + b, 0) / m;
+
+  let num = 0, den1 = 0, den2 = 0;
+  for (let i = 0; i < m; i++) {
+    const d1 = ret1[i] - mean1;
+    const d2 = ret2[i] - mean2;
+    num += d1 * d2;
+    den1 += d1 * d1;
+    den2 += d2 * d2;
+  }
+
+  const den = Math.sqrt(den1 * den2);
+  return den === 0 ? 0 : num / den;
+}
+
+function buildCompareData(primary: HistoryPoint[], compare: HistoryPoint[]): MergedChartPoint[] {
+  if (primary.length === 0) return [];
+  const baseP = primary[0].close;
+  const baseC = compare.length > 0 ? compare[0].close : 1;
+
+  const compareMap = new Map(compare.map((p) => [p.date, p.close]));
+  const hasDateMatch = primary.some((p) => compareMap.has(p.date));
+
+  if (hasDateMatch) {
+    return primary.map((p) => {
+      const cc = compareMap.get(p.date);
+      return {
+        date: p.date,
+        close: ((p.close - baseP) / baseP) * 100,
+        ...(cc !== undefined ? { compareClose: ((cc - baseC) / baseC) * 100 } : {}),
+      };
+    });
+  }
+
+  // Index-based alignment for intraday where timestamps rarely match exactly
+  const minLen = Math.min(primary.length, compare.length);
+  return primary.slice(0, minLen).map((p, i) => ({
+    date: p.date,
+    close: ((p.close - baseP) / baseP) * 100,
+    compareClose: ((compare[i].close - baseC) / baseC) * 100,
+  }));
+}
+
+function correlationLabel(r: number): string {
+  const abs = Math.abs(r);
+  const dir = r >= 0 ? "positive" : "negative";
+  if (abs >= 0.8) return `Strong ${dir}`;
+  if (abs >= 0.5) return `Moderate ${dir}`;
+  if (abs >= 0.2) return `Weak ${dir}`;
+  return "Uncorrelated";
+}
+
 function StockChart({
   data,
   color,
   range,
+  compareData,
+  compareTicker,
 }: {
   data: HistoryPoint[];
   color: string;
   range: Range;
+  compareData?: HistoryPoint[];
+  compareTicker?: string | null;
 }) {
   const intraday = range === "1d" || range === "7d";
+  const hasCompare = compareData && compareData.length > 0;
+
+  const chartData: MergedChartPoint[] = hasCompare
+    ? buildCompareData(data, compareData)
+    : data.map((p) => ({ date: p.date, close: p.close }));
+
+  const tickFormatter = (d: string) =>
+    intraday
+      ? new Date(d).toLocaleString("en-US", {
+          hour: "numeric",
+          minute: "2-digit",
+          timeZone: "America/New_York",
+          ...(range === "7d" && { month: "short", day: "numeric" }),
+        })
+      : new Date(d).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          timeZone: "UTC",
+        });
+
   return (
     <ResponsiveContainer width="100%" height={200}>
-      <AreaChart data={data} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+      <AreaChart data={chartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
         <XAxis
           dataKey="date"
-          tickFormatter={(d: string) =>
-            intraday
-              ? new Date(d).toLocaleString("en-US", {
-                  hour: "numeric",
-                  minute: "2-digit",
-                  timeZone: "America/New_York",
-                  ...(range === "7d" && { month: "short", day: "numeric" }),
-                })
-              : new Date(d).toLocaleDateString("en-US", {
-                  month: "short",
-                  day: "numeric",
-                  timeZone: "UTC",
-                })
-          }
+          tickFormatter={tickFormatter}
           tick={{ fontSize: 10, fill: "#71717a" }}
           tickLine={false}
           axisLine={false}
@@ -115,7 +200,11 @@ function StockChart({
           tickLine={false}
           axisLine={false}
           width={56}
-          tickFormatter={(v: number) => `$${v.toFixed(0)}`}
+          tickFormatter={
+            hasCompare
+              ? (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`
+              : (v: number) => `$${v.toFixed(0)}`
+          }
         />
         <Tooltip
           cursor={{ stroke: "#52525b", strokeWidth: 1 }}
@@ -127,34 +216,57 @@ function StockChart({
           }}
           itemStyle={{ color: "#e4e4e7" }}
           labelStyle={{ color: "#71717a" }}
-          formatter={(v: number) => [`$${v.toFixed(2)}`, "Price"]}
-          labelFormatter={(label: string) =>
-            intraday
-              ? new Date(label).toLocaleString("en-US", {
+          formatter={(v, name) => {
+            const val = typeof v === "number" ? v : 0;
+            const key = String(name);
+            return hasCompare
+              ? [
+                  `${val >= 0 ? "+" : ""}${val.toFixed(2)}%`,
+                  key === "compareClose" ? (compareTicker ?? "Compare") : "Primary",
+                ]
+              : [`$${val.toFixed(2)}`, "Price"];
+          }}
+          labelFormatter={(label) => {
+            const l = String(label);
+            return intraday
+              ? new Date(l).toLocaleString("en-US", {
                   month: "short",
                   day: "numeric",
                   hour: "numeric",
                   minute: "2-digit",
                   timeZone: "America/New_York",
                 })
-              : new Date(label).toLocaleDateString("en-US", {
+              : new Date(l).toLocaleDateString("en-US", {
                   month: "short",
                   day: "numeric",
                   year: "numeric",
                   timeZone: "UTC",
-                })
-          }
+                });
+          }}
         />
         <Area
           type="monotone"
           dataKey="close"
           stroke={color}
           fill={color}
-          fillOpacity={0.15}
+          fillOpacity={hasCompare ? 0.08 : 0.15}
           dot={false}
           activeDot={{ r: 3 }}
           isAnimationActive={false}
         />
+        {hasCompare && (
+          <Area
+            type="monotone"
+            dataKey="compareClose"
+            stroke="#818cf8"
+            fill="#818cf8"
+            fillOpacity={0.08}
+            dot={false}
+            activeDot={{ r: 3 }}
+            isAnimationActive={false}
+            connectNulls
+          />
+        )}
       </AreaChart>
     </ResponsiveContainer>
   );
@@ -165,14 +277,30 @@ function QuoteDetail({
   chart,
   range,
   onRangeChange,
-  isPro,
+  showCompare,
+  onToggleCompare,
+  compareInput,
+  onCompareInputChange,
+  compareTicker,
+  onCompareSelect,
+  compareChart,
+  onClearCompare,
 }: {
   data: QuoteData;
   chart: ChartState;
   range: Range;
   onRangeChange: (r: Range) => void;
-  isPro: boolean;
+  showCompare: boolean;
+  onToggleCompare: () => void;
+  compareInput: string;
+  onCompareInputChange: (v: string) => void;
+  compareTicker: string | null;
+  onCompareSelect: (sym: string) => void;
+  compareChart: ChartState;
+  onClearCompare: () => void;
 }) {
+  const isPro = useIsPro();
+  const proToken = useProToken();
   const [explanation, setExplanation] = useState<string | null>(null);
   const [explainStatus, setExplainStatus] = useState<"idle" | "loading" | "error">("idle");
 
@@ -181,7 +309,6 @@ function QuoteDetail({
     setExplainStatus("idle");
   }, [data.symbol]);
 
-  // Daily change — used only for the "X% today" header line
   const dailyPositive = isPositive(data);
   const changeColor = dailyPositive ? "text-emerald-400" : "text-red-400";
   const sign = dailyPositive ? "+" : "";
@@ -192,21 +319,30 @@ function QuoteDetail({
     data.marketState === "POSTPOST" ||
     (data.marketState === "CLOSED" && data.postMarketPrice != null);
 
-  // Range change — drives chart color and the range label
+  // For 1d, use the quote's official daily change (vs. previous close) so it
+  // matches the header. Chart history endpoints measure open→now, which diverges
+  // whenever there's a gap at open.
   const rangeChange =
-    chart.status === "ok" && chart.data.length >= 2
-      ? (() => {
-          const start = chart.data[0].close;
-          const end = chart.data[chart.data.length - 1].close;
-          const diff = end - start;
-          const pct = (diff / start) * 100;
-          const pos = diff >= 0;
-          return { diff, pct, pos };
-        })()
-      : null;
+    range === "1d"
+      ? data.change !== null && data.changePercent !== null
+        ? { diff: data.change, pct: data.changePercent, pos: data.change >= 0 }
+        : null
+      : chart.status === "ok" && chart.data.length >= 2
+        ? (() => {
+            const start = chart.data[0].close;
+            const end = chart.data[chart.data.length - 1].close;
+            const diff = end - start;
+            const pct = (diff / start) * 100;
+            return { diff, pct, pos: diff >= 0 };
+          })()
+        : null;
 
-  // Chart color follows the selected range's performance, not today's daily change
   const chartColor = (rangeChange?.pos ?? dailyPositive) ? "#34d399" : "#f87171";
+
+  const correlation =
+    chart.status === "ok" && compareChart.status === "ok"
+      ? pearsonCorrelation(chart.data, compareChart.data)
+      : null;
 
   return (
     <div className="rounded-lg border border-zinc-800 p-5">
@@ -275,7 +411,7 @@ function QuoteDetail({
       </div>
 
       {/* Range change label */}
-      {rangeChange && (
+      {rangeChange && !showCompare && (
         <div className="flex items-baseline gap-1.5 mb-3">
           <span className={`text-sm font-semibold ${rangeChange.pos ? "text-emerald-400" : "text-red-400"}`}>
             {rangeChange.pos ? "+" : ""}${Math.abs(rangeChange.diff).toFixed(2)}
@@ -287,8 +423,8 @@ function QuoteDetail({
         </div>
       )}
 
-      {/* Range buttons */}
-      <div className="flex gap-1 mb-3">
+      {/* Range buttons + Compare toggle */}
+      <div className="flex items-center gap-1 mb-3 flex-wrap">
         {RANGES.map((r) => (
           <button
             key={r}
@@ -300,11 +436,69 @@ function QuoteDetail({
             {r.toUpperCase()}
           </button>
         ))}
+        <span className="mx-1 text-zinc-700 select-none">|</span>
+        {!showCompare ? (
+          <button
+            onClick={onToggleCompare}
+            className="px-2 py-1 text-xs rounded text-zinc-500 hover:text-indigo-400 transition-colors"
+          >
+            Compare
+          </button>
+        ) : (
+          <button
+            onClick={onClearCompare}
+            className="px-2 py-1 text-xs rounded text-indigo-400 hover:text-zinc-300 transition-colors"
+          >
+            ✕ Clear comparison
+          </button>
+        )}
       </div>
+
+      {/* Compare ticker input */}
+      {showCompare && (
+        <div className="mb-3">
+          <TickerAutocomplete
+            value={compareInput}
+            onChange={(v) => {
+              onCompareInputChange(v);
+              if (compareTicker && v !== compareTicker) onClearCompare();
+            }}
+            onSelect={onCompareSelect}
+            placeholder="Compare with…"
+          />
+          {compareTicker && compareChart.status === "loading" && (
+            <p className="text-xs text-zinc-500 mt-1 animate-pulse">Loading comparison…</p>
+          )}
+          {compareTicker && compareChart.status === "error" && (
+            <p className="text-xs text-zinc-500 mt-1">Could not load comparison data.</p>
+          )}
+        </div>
+      )}
+
+      {/* Compare legend */}
+      {showCompare && compareTicker && compareChart.status === "ok" && (
+        <div className="flex items-center gap-3 mb-2 text-xs">
+          <span className="flex items-center gap-1">
+            <span className="inline-block w-2.5 h-0.5 rounded" style={{ background: chartColor }} />
+            <span className="text-zinc-400">{data.symbol}</span>
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block w-2.5 h-0.5 rounded bg-indigo-400" />
+            <span className="text-zinc-400">{compareTicker}</span>
+          </span>
+          <span className="text-zinc-600 ml-auto">% change from start</span>
+        </div>
+      )}
 
       {/* Chart */}
       {chart.status === "ok" && chart.data.length > 0 ? (
-        <StockChart data={chart.data} color={chartColor} range={range} />
+        <StockChart
+          data={chart.data}
+          color={chartColor}
+          range={range}
+          compareData={compareChart.status === "ok" ? compareChart.data : undefined}
+          compareTicker={compareTicker}
+        />
       ) : chart.status === "loading" ? (
         <div className="flex items-center justify-center h-48 text-xs text-zinc-500 animate-pulse">
           Loading chart…
@@ -314,6 +508,19 @@ function QuoteDetail({
           Chart unavailable
         </div>
       ) : null}
+
+      {/* Correlation score */}
+      {correlation !== null && (
+        <div className="mt-2 flex items-center gap-2 text-xs">
+          <span className="text-zinc-500">
+            Correlation with {compareTicker}:
+          </span>
+          <span className={`font-medium ${Math.abs(correlation) >= 0.5 ? "text-zinc-200" : "text-zinc-400"}`}>
+            {correlation.toFixed(2)}
+          </span>
+          <span className="text-zinc-600">— {correlationLabel(correlation)}</span>
+        </div>
+      )}
 
       {/* Explain */}
       <div className="mt-4 pt-4 border-t border-zinc-800">
@@ -336,7 +543,8 @@ function QuoteDetail({
             onClick={() => {
               if (!data.price || data.changePercent === null) return;
               setExplainStatus("loading");
-              fetch(`/api/explain?ticker=${data.symbol}&price=${data.price}&changePercent=${data.changePercent}`, { headers: { "x-app-client": "market-plain" } })
+              generateAuthToken().then((token) =>
+              fetch(`/api/explain?ticker=${data.symbol}&price=${data.price}&changePercent=${data.changePercent}`, { headers: { Authorization: `Bearer ${token}`, "X-Pro-Token": proToken ?? "" } }))
                 .then((r) => r.json())
                 .then((res: { explanation?: string; error?: string }) => {
                   if (res.error || !res.explanation) setExplainStatus("error");
@@ -360,11 +568,12 @@ export default function StockSearch() {
   const [quote, setQuote] = useState<QuoteState>({ status: "idle" });
   const [range, setRange] = useState<Range>("1d");
   const [chart, setChart] = useState<ChartState>({ status: "idle" });
-  const [isPro, setIsPro] = useState(false);
 
-  useEffect(() => {
-    setIsPro(localStorage.getItem("isPro") === "true");
-  }, []);
+  // Compare state
+  const [showCompare, setShowCompare] = useState(false);
+  const [compareInput, setCompareInput] = useState("");
+  const [compareTicker, setCompareTicker] = useState<string | null>(null);
+  const [compareChart, setCompareChart] = useState<ChartState>({ status: "idle" });
 
   // Silent auto-refresh every 30 seconds when a ticker is selected
   useEffect(() => {
@@ -376,7 +585,7 @@ export default function StockSearch() {
           if (!data.error) setQuote({ status: "ok", data });
         })
         .catch(() => {});
-    }, 30_000);
+    }, getRefreshInterval(30_000));
     return () => clearInterval(interval);
   }, [ticker]);
 
@@ -391,11 +600,30 @@ export default function StockSearch() {
       .catch(() => setChart({ status: "error" }));
   }
 
+  function loadCompareChart(sym: string, r: Range) {
+    setCompareChart({ status: "loading" });
+    fetch(`/api/history?ticker=${sym}&range=${r}`)
+      .then((res) => res.json())
+      .then((data: { data?: HistoryPoint[]; error?: string }) => {
+        if (data.error || !data.data) setCompareChart({ status: "error" });
+        else setCompareChart({ status: "ok", data: data.data });
+      })
+      .catch(() => setCompareChart({ status: "error" }));
+  }
+
+  function clearCompare() {
+    setShowCompare(false);
+    setCompareInput("");
+    setCompareTicker(null);
+    setCompareChart({ status: "idle" });
+  }
+
   function handleSelect(sym: string) {
     setTicker(sym);
     setRange("1d");
     setQuote({ status: "loading" });
     setChart({ status: "loading" });
+    clearCompare();
 
     fetch(`/api/quote?ticker=${sym}`)
       .then((r) => r.json())
@@ -412,6 +640,12 @@ export default function StockSearch() {
     if (!ticker) return;
     setRange(r);
     loadChart(ticker, r);
+    if (compareTicker) loadCompareChart(compareTicker, r);
+  }
+
+  function handleCompareSelect(sym: string) {
+    setCompareTicker(sym);
+    loadCompareChart(sym, range);
   }
 
   function clear() {
@@ -419,6 +653,7 @@ export default function StockSearch() {
     setInput("");
     setQuote({ status: "idle" });
     setChart({ status: "idle" });
+    clearCompare();
   }
 
   return (
@@ -464,7 +699,14 @@ export default function StockSearch() {
           chart={chart}
           range={range}
           onRangeChange={handleRangeChange}
-          isPro={isPro}
+          showCompare={showCompare}
+          onToggleCompare={() => setShowCompare(true)}
+          compareInput={compareInput}
+          onCompareInputChange={setCompareInput}
+          compareTicker={compareTicker}
+          onCompareSelect={handleCompareSelect}
+          compareChart={compareChart}
+          onClearCompare={clearCompare}
         />
       )}
 

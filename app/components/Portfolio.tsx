@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { generateAuthToken } from "../lib/authToken";
+import { getRefreshInterval } from "../lib/marketHours";
+import { useIsPro, useProToken } from "../context/ProContext";
 import {
   Area,
   AreaChart,
@@ -33,6 +36,7 @@ function filterHistory(history: PortfolioSnapshot[], range: ChartRange): Portfol
 interface Position {
   ticker: string;
   shares: number;
+  avgBuyPrice?: number;
 }
 
 interface QuoteData {
@@ -71,8 +75,10 @@ export default function Portfolio() {
   const [quotes, setQuotes] = useState<Record<string, QuoteState>>({});
   const [tickerInput, setTickerInput] = useState("");
   const [sharesInput, setSharesInput] = useState("");
+  const [avgBuyPriceInput, setAvgBuyPriceInput] = useState("");
   const [portfolioHistory, setPortfolioHistory] = useState<PortfolioSnapshot[]>([]);
-  const [isPro, setIsPro] = useState(false);
+  const isPro = useIsPro();
+  const proToken = useProToken();
   const [chartRange, setChartRange] = useState<ChartRange>("ALL");
   const [summary, setSummary] = useState<string | null>(null);
   const [summaryStatus, setSummaryStatus] = useState<"idle" | "loading" | "error">("idle");
@@ -80,11 +86,10 @@ export default function Portfolio() {
   const fetchedRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    setIsPro(localStorage.getItem("isPro") === "true");
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
       const parsed = JSON.parse(stored);
-      setPositions(parsed.map((p: { ticker: string; shares: number }) => ({ ticker: p.ticker, shares: p.shares })));
+      setPositions(parsed.map((p: { ticker: string; shares: number; avgBuyPrice?: number }) => ({ ticker: p.ticker, shares: p.shares, avgBuyPrice: p.avgBuyPrice })));
     }
     const hist = localStorage.getItem(HISTORY_KEY);
     if (hist) setPortfolioHistory(JSON.parse(hist));
@@ -118,7 +123,7 @@ export default function Portfolio() {
           })
           .catch(() => {});
       });
-    }, 60_000);
+    }, getRefreshInterval(60_000));
     return () => clearInterval(interval);
   }, [positions]);
 
@@ -131,9 +136,13 @@ export default function Portfolio() {
     const sym = tickerInput.trim().toUpperCase();
     const shares = parseFloat(sharesInput);
     if (!sym || isNaN(shares) || shares <= 0 || shares > 1_000_000) return;
-    persist([...positions, { ticker: sym, shares }]);
+    const avgBuyPrice = avgBuyPriceInput ? parseFloat(avgBuyPriceInput) : undefined;
+    const position: Position = { ticker: sym, shares };
+    if (avgBuyPrice && avgBuyPrice > 0) position.avgBuyPrice = avgBuyPrice;
+    persist([...positions, position]);
     setTickerInput("");
     setSharesInput("");
+    setAvgBuyPriceInput("");
   }
 
   function removePosition(index: number) {
@@ -202,6 +211,18 @@ export default function Portfolio() {
   }, 0);
   const todayChangePct = totalValue > 0 ? (todayChange / (totalValue - todayChange)) * 100 : 0;
 
+  const totalUnrealizedPnL = positions.reduce((s, p) => {
+    if (!p.avgBuyPrice) return s;
+    const q = quotes[p.ticker];
+    const price = q?.status === "ok" ? (q.data.price ?? 0) : 0;
+    return s + p.shares * (price - p.avgBuyPrice);
+  }, 0);
+  const totalCostBasis = positions.reduce((s, p) => {
+    if (!p.avgBuyPrice) return s;
+    return s + p.shares * p.avgBuyPrice;
+  }, 0);
+  const hasAnyBasis = positions.some((p) => p.avgBuyPrice);
+
   // Stocks / crypto split
   const indexedPositions = positions.map((pos, i) => ({ pos, i }));
   const stockGroup = indexedPositions.filter(({ pos }) => !isCrypto(pos.ticker));
@@ -234,11 +255,13 @@ export default function Portfolio() {
       .filter(Boolean);
     if (positionInputs.length === 0) return;
     setSummaryStatus("loading");
+    const body = JSON.stringify({ positions: positionInputs, totalValue, totalChange: todayChange, totalChangePct: todayChangePct });
+    generateAuthToken().then((token) =>
     fetch("/api/portfolio-summary", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-app-client": "market-plain" },
-      body: JSON.stringify({ positions: positionInputs, totalValue, totalChange: todayChange, totalChangePct: todayChangePct }),
-    })
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "X-Pro-Token": proToken ?? "" },
+      body,
+    }))
       .then((r) => r.json())
       .then((data: { summary?: string; error?: string }) => {
         if (data.error || !data.summary) setSummaryStatus("error");
@@ -327,11 +350,20 @@ export default function Portfolio() {
     const changeColor = posChange === null ? "text-zinc-500" : positive ? "text-emerald-400" : "text-red-400";
     const sign = positive ? "+" : "";
 
+    const costBasis = pos.avgBuyPrice != null ? pos.shares * pos.avgBuyPrice : null;
+    const unrealizedPnL = costBasis != null && currentValue != null ? currentValue - costBasis : null;
+    const unrealizedPct = costBasis != null && costBasis > 0 && unrealizedPnL != null ? (unrealizedPnL / costBasis) * 100 : null;
+    const pnlPositive = unrealizedPnL !== null && unrealizedPnL >= 0;
+    const pnlColor = unrealizedPnL === null ? "text-zinc-500" : pnlPositive ? "text-emerald-400" : "text-red-400";
+
     return (
       <li key={i} className="px-4 py-3 flex items-center justify-between group">
         <div className="flex flex-col">
           <span className="text-sm font-semibold text-white">{pos.ticker}</span>
           <span className="text-xs text-zinc-500">{pos.shares} {unit}</span>
+          {costBasis != null && (
+            <span className="text-xs text-zinc-600">Basis {currency(costBasis)}</span>
+          )}
         </div>
         <div className="flex items-center gap-3">
           <div className="flex flex-col items-end min-w-0">
@@ -346,6 +378,11 @@ export default function Portfolio() {
                 </>
               ) : "—"}
             </span>
+            {unrealizedPnL !== null && unrealizedPct !== null && (
+              <span className={`text-xs ${pnlColor} text-right`}>
+                {pnlPositive ? "+" : ""}{currency(unrealizedPnL)} ({pnlPositive ? "+" : ""}{unrealizedPct.toFixed(2)}%)
+              </span>
+            )}
           </div>
           <button
             onClick={() => removePosition(i)}
@@ -389,6 +426,14 @@ export default function Portfolio() {
                     {todayChange >= 0 ? "+" : ""}{currency(todayChange)}{" "}
                     <span className="text-xs">({todayChange >= 0 ? "+" : ""}{todayChangePct.toFixed(2)}%) today</span>
                   </p>
+                  {hasAnyBasis && (
+                    <p className={`mt-1 text-xs font-medium ${totalUnrealizedPnL >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                      {totalUnrealizedPnL >= 0 ? "+" : ""}{currency(totalUnrealizedPnL)}{" "}
+                      <span className="text-zinc-500">
+                        ({totalUnrealizedPnL >= 0 ? "+" : ""}{totalCostBasis > 0 ? ((totalUnrealizedPnL / totalCostBasis) * 100).toFixed(2) : "0.00"}%) unrealized
+                      </span>
+                    </p>
+                  )}
                   {hasBoth && (
                     <p className="mt-1.5 text-xs text-zinc-500">
                       Stocks{" "}
@@ -594,6 +639,16 @@ export default function Portfolio() {
               Add
             </button>
           </div>
+          <input
+            value={avgBuyPriceInput}
+            onChange={(e) => setAvgBuyPriceInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && addPosition()}
+            placeholder="Avg buy price (optional)"
+            type="number"
+            min="0"
+            step="any"
+            className="w-full bg-zinc-900 border border-zinc-700 rounded px-3 py-1.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-500"
+          />
         </div>
       </div>
     </div>

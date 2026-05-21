@@ -34,3 +34,43 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Production Deployment
+
+### Environment variables
+
+Copy `.env.example` to `.env.local` and fill in all values before deploying. In Vercel, add these under **Project → Settings → Environment Variables**.
+
+| Variable | Description |
+| --- | --- |
+| `ANTHROPIC_API_KEY` | Anthropic API key for AI features |
+| `NEXT_PUBLIC_MARKET_PLAIN_API_SECRET` | 32-byte hex secret for HMAC request signing — generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
+| `PRO_BYPASS_TOKENS` | Comma-separated Pro access tokens until Stripe is live |
+| `REDIS_URL` | Redis connection string for production rate limiting (see below) |
+
+### Redis rate limiting
+
+The default in-memory rate limiter (`RateLimiterMemory`) resets on every server restart and does not work across multiple Vercel instances. For production, set `REDIS_URL` and swap both limiters in `app/lib/rateLimit.ts` to `RateLimiterRedis`:
+
+```ts
+import { RateLimiterRedis } from "rate-limiter-flexible";
+import Redis from "ioredis";
+
+const redis = new Redis(process.env.REDIS_URL!);
+
+const aiLimiter = new RateLimiterRedis({
+  storeClient: redis,
+  points: 20,
+  duration: 3600,
+  keyPrefix: "rl_ai",
+});
+
+const dataLimiter = new RateLimiterRedis({
+  storeClient: redis,
+  points: 200,
+  duration: 3600,
+  keyPrefix: "rl_data",
+});
+```
+
+[Upstash Redis](https://upstash.com) is recommended for Vercel deployments — it is serverless-compatible and has a free tier. Install `ioredis` with `npm install ioredis`.

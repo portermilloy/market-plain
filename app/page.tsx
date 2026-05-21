@@ -1,29 +1,29 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import ArticlePanel from "./components/ArticlePanel";
 import CryptoWidget from "./components/CryptoWidget";
 import EarningsCalendar from "./components/EarningsCalendar";
+import ErrorBoundary from "./components/ErrorBoundary";
 import NewsSection, { type ArticleInfo } from "./components/NewsSection";
+import OnboardingOverlay from "./components/OnboardingOverlay";
 import Portfolio from "./components/Portfolio";
 import SectorHeatmap from "./components/SectorHeatmap";
 import StockSearch from "./components/StockSearch";
 import TopMovers from "./components/TopMovers";
 import Watchlist from "./components/Watchlist";
+import { useIsPro } from "./context/ProContext";
 
 export default function Home() {
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
   const [selectedArticle, setSelectedArticle] = useState<ArticleInfo | null>(null);
-  const [isPro, setIsPro] = useState(true); // default true to avoid flash
   const [bannerDismissed, setBannerDismissed] = useState(false);
-
-  useEffect(() => {
-    setIsPro(localStorage.getItem("isPro") === "true");
-  }, []);
+  const isPro = useIsPro();
 
   return (
     <div className="flex flex-col gap-6">
+      <OnboardingOverlay />
       {!isPro && !bannerDismissed && (
         <div className="rounded-lg border border-zinc-700 bg-zinc-900 px-4 py-3 flex items-start justify-between gap-4">
           <div>
@@ -51,31 +51,49 @@ export default function Home() {
         </p>
       </div>
 
-      <StockSearch />
+      <ErrorBoundary>
+        <StockSearch />
+      </ErrorBoundary>
 
-      <TopMovers />
+      <ErrorBoundary>
+        <TopMovers />
+      </ErrorBoundary>
 
-      <SectorHeatmap />
+      <ErrorBoundary>
+        <SectorHeatmap />
+      </ErrorBoundary>
 
-      <EarningsCalendar />
+      <ErrorBoundary>
+        <EarningsCalendar />
+      </ErrorBoundary>
 
-      <CryptoWidget />
+      <ErrorBoundary>
+        <CryptoWidget />
+      </ErrorBoundary>
 
       <div className={`grid gap-6 items-start grid-cols-1 ${selectedTicker ? "lg:grid-cols-3" : "md:grid-cols-2"}`}>
-        <Portfolio />
-        <Watchlist onSelect={setSelectedTicker} />
+        <ErrorBoundary>
+          <Portfolio />
+        </ErrorBoundary>
+        <ErrorBoundary>
+          <Watchlist onSelect={setSelectedTicker} />
+        </ErrorBoundary>
         {selectedTicker && (
-          <NewsSection
-            ticker={selectedTicker}
-            onArticleClick={setSelectedArticle}
-          />
+          <ErrorBoundary>
+            <NewsSection
+              ticker={selectedTicker}
+              onArticleClick={setSelectedArticle}
+            />
+          </ErrorBoundary>
         )}
       </div>
 
-      <ArticlePanel
-        article={selectedArticle}
-        onClose={() => setSelectedArticle(null)}
-      />
+      <ErrorBoundary>
+        <ArticlePanel
+          article={selectedArticle}
+          onClose={() => setSelectedArticle(null)}
+        />
+      </ErrorBoundary>
     </div>
   );
 }

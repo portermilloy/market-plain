@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { generateAuthToken } from "../lib/authToken";
+import { useIsPro, useProToken } from "../context/ProContext";
 
 interface NewsItem {
   title: string;
@@ -42,13 +44,10 @@ export default function NewsSection({
   onArticleClick?: (article: ArticleInfo) => void;
 }) {
   const [state, setState] = useState<NewsState>({ status: "loading" });
-  const [isPro, setIsPro] = useState(false);
+  const isPro = useIsPro();
+  const proToken = useProToken();
   const [summary, setSummary] = useState<string | null>(null);
   const [summaryStatus, setSummaryStatus] = useState<SummaryStatus>("idle");
-
-  useEffect(() => {
-    setIsPro(localStorage.getItem("isPro") === "true");
-  }, []);
 
   useEffect(() => {
     setState({ status: "loading" });
@@ -69,14 +68,13 @@ export default function NewsSection({
   function handleSummarize() {
     if (state.status !== "ok") return;
     setSummaryStatus("loading");
+    const body = JSON.stringify({ ticker, headlines: state.items.map((i) => i.title) });
+    generateAuthToken().then((token) =>
     fetch("/api/summarize", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-app-client": "market-plain" },
-      body: JSON.stringify({
-        ticker,
-        headlines: state.items.map((i) => i.title),
-      }),
-    })
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "X-Pro-Token": proToken ?? "" },
+      body,
+    }))
       .then((r) => r.json())
       .then((data: { summary?: string; error?: string }) => {
         if (data.error || !data.summary) setSummaryStatus("error");
