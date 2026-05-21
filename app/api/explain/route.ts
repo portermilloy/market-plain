@@ -1,4 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { verifyAuthToken } from "@/app/lib/authToken";
+import { isValidProToken } from "@/app/lib/proToken";
 import { checkRateLimit, getIp } from "@/app/lib/rateLimit";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -18,8 +20,12 @@ export async function GET(request: Request) {
     );
   }
 
-  if (request.headers.get("x-app-client") !== "market-plain") {
+  if (!await verifyAuthToken(request.headers.get("authorization"))) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (!isValidProToken(request.headers.get("x-pro-token"))) {
+    return Response.json({ error: "Pro subscription required" }, { status: 403 });
   }
 
   const { allowed, remaining } = await checkRateLimit(getIp(request));
