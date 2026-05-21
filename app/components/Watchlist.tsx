@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { generateAuthToken } from "../lib/authToken";
 import { getRefreshInterval } from "../lib/marketHours";
 import { useIsPro, useProToken } from "../context/ProContext";
@@ -58,6 +58,28 @@ type HistoryState =
   | { status: "ok"; data: HistoryPoint[] }
   | { status: "error" };
 
+interface EarningsQuarter {
+  period: string;
+  reportedDate: string | null;
+  epsEstimate: number;
+  epsActual: number | null;
+  epsDifference: number | null;
+  surprisePercent: number | null;
+  revenue: number | null;
+}
+
+interface EarningsData {
+  quarters: EarningsQuarter[];
+  currency: string;
+}
+
+type EarningsState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "ok"; data: EarningsData }
+  | { status: "unavailable" }
+  | { status: "error" };
+
 function fmt(n: number | null, decimals = 2) {
   if (n === null) return "—";
   return n.toFixed(decimals);
@@ -77,10 +99,24 @@ function fmtDate(iso: string): string {
   });
 }
 
+function fmtQuarter(raw: string): string {
+  const m = raw.match(/^(\d)Q(\d{4})$/);
+  if (!m) return raw;
+  return `Q${m[1]} ${m[2]}`;
+}
+
+function fmtRev(n: number, currency: string): string {
+  const sym = currency === "USD" ? "$" : `${currency} `;
+  if (n >= 1e12) return `${sym}${(n / 1e12).toFixed(2)}T`;
+  if (n >= 1e9) return `${sym}${(n / 1e9).toFixed(2)}B`;
+  if (n >= 1e6) return `${sym}${(n / 1e6).toFixed(1)}M`;
+  return `${sym}${n.toFixed(0)}`;
+}
+
 function earningsSoon(iso: string | null): boolean {
   if (!iso) return false;
   const days = (new Date(iso).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
-  return days >= 0 && days <= 7;
+  return days >= -2 && days <= 7;
 }
 
 function fetchQuote(
@@ -119,6 +155,27 @@ function fetchHistory(
     })
     .catch(() => {
       setHistory((prev) => ({ ...prev, [ticker]: { status: "error" } }));
+    });
+}
+
+function fetchEarnings(
+  ticker: string,
+  setEarnings: React.Dispatch<React.SetStateAction<Record<string, EarningsState>>>
+) {
+  fetch(`/api/earnings?ticker=${ticker}`)
+    .then((r) => r.json())
+    .then((res: { quarters?: EarningsQuarter[]; currency?: string; error?: string }) => {
+      if (res.error || !res.quarters) {
+        setEarnings((prev) => ({ ...prev, [ticker]: { status: "unavailable" } }));
+      } else {
+        setEarnings((prev) => ({
+          ...prev,
+          [ticker]: { status: "ok", data: { quarters: res.quarters!, currency: res.currency ?? "USD" } },
+        }));
+      }
+    })
+    .catch(() => {
+      setEarnings((prev) => ({ ...prev, [ticker]: { status: "error" } }));
     });
 }
 
@@ -315,6 +372,9 @@ export default function Watchlist({
   const [explanations, setExplanations] = useState<Record<string, string>>({});
   const [explainStatuses, setExplainStatuses] = useState<Record<string, "idle" | "loading" | "error">>({});
   const [limitError, setLimitError] = useState(false);
+  const [earningsData, setEarningsData] = useState<Record<string, EarningsState>>({});
+  const [earningsExplanations, setEarningsExplanations] = useState<Record<string, string>>({});
+  const [earningsExplainStatuses, setEarningsExplainStatuses] = useState<Record<string, "idle" | "loading" | "error">>({});
   const [alerts, setAlerts] = useState<Record<string, { price: number; direction: "above" | "below" }>>({});
   const alertsRef = useRef(alerts);
   const [popoverTicker, setPopoverTicker] = useState<string | null>(null);
@@ -448,6 +508,21 @@ export default function Watchlist({
       delete next[ticker];
       return next;
     });
+    setEarningsData((prev) => {
+      const next = { ...prev };
+      delete next[ticker];
+      return next;
+    });
+    setEarningsExplanations((prev) => {
+      const next = { ...prev };
+      delete next[ticker];
+      return next;
+    });
+    setEarningsExplainStatuses((prev) => {
+      const next = { ...prev };
+      delete next[ticker];
+      return next;
+    });
     setAlerts((prev) => {
       const next = { ...prev };
       delete next[ticker];
@@ -503,6 +578,11 @@ export default function Watchlist({
           else setExpandedChartData({ status: "ok", data: res.data });
         })
         .catch(() => setExpandedChartData({ status: "error" }));
+      const es = earningsData[ticker];
+      if (!es || es.status === "error") {
+        setEarningsData((prev) => ({ ...prev, [ticker]: { status: "loading" } }));
+        fetchEarnings(ticker, setEarningsData);
+      }
       onSelect?.(ticker);
     }
   }
@@ -638,7 +718,7 @@ export default function Watchlist({
                     </span>
                     {earningsSoon(data.earningsDate) && (
                       <span className="text-xs font-medium text-amber-500 bg-amber-500/10 px-1 py-0.5 rounded leading-none">
-                        EARNS
+                        {new Date(data.earningsDate!).getTime() < Date.now() ? "EARNS ✓" : "EARNS"}
                       </span>
                     )}
                   </div>
@@ -861,6 +941,107 @@ export default function Watchlist({
                       Chart unavailable
                     </div>
                   )}
+
+                  {(() => {
+                    const es = earningsData[ticker];
+                    if (!es || es.status === "unavailable") return null;
+                    if (es.status === "loading") return (
+                      <div className="mt-4 pt-4 border-t border-zinc-800">
+                        <div className="h-3 w-28 bg-zinc-800 rounded animate-pulse mb-2" />
+                        <div className="space-y-1.5">
+                          {[0,1,2,3].map((i) => <div key={i} className="h-3 w-full bg-zinc-800 rounded animate-pulse" />)}
+                        </div>
+                      </div>
+                    );
+                    if (es.status !== "ok") return null;
+                    const { quarters, currency } = es.data;
+                    return (
+                      <div className="mt-4 pt-4 border-t border-zinc-800">
+                        <h3 className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">Quarterly Earnings</h3>
+                        <div className="divide-y divide-zinc-800/60 mb-3">
+                          {[...quarters].reverse().map((q) => {
+                            const beat = q.epsDifference != null ? q.epsDifference >= 0 : q.epsActual != null ? q.epsActual >= q.epsEstimate : null;
+                            const reportedLabel = q.reportedDate
+                              ? new Date(q.reportedDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })
+                              : null;
+                            return (
+                              <div key={q.period} className="py-2">
+                                <div className="flex items-center justify-between mb-0.5">
+                                  <span className="text-xs font-semibold text-zinc-200">{fmtQuarter(q.period)}</span>
+                                  {reportedLabel && (
+                                    <span className="text-xs text-zinc-500">Reported {reportedLabel}</span>
+                                  )}
+                                </div>
+                                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
+                                  {q.epsActual != null ? (
+                                    <>
+                                      <span className="text-zinc-400">
+                                        <span className="font-medium text-white">${q.epsActual.toFixed(2)}</span>
+                                        <span className="text-zinc-600"> per share</span>
+                                      </span>
+                                      {q.epsDifference != null && (
+                                        <span className={`font-medium ${beat ? "text-emerald-400" : "text-red-400"}`}>
+                                          &middot; {beat ? "beat" : "missed"} by {beat ? "+" : "−"}${Math.abs(q.epsDifference).toFixed(2)}
+                                          {q.surprisePercent != null && ` (${beat ? "+" : ""}${q.surprisePercent.toFixed(1)}%)`}
+                                        </span>
+                                      )}
+                                    </>
+                                  ) : (
+                                    <span className="text-zinc-500">Not yet reported · Est. ${q.epsEstimate.toFixed(2)}/share</span>
+                                  )}
+                                  {q.revenue != null && (
+                                    <span className="text-zinc-500 ml-auto">
+                                      Rev <span className="text-zinc-300">{fmtRev(q.revenue, currency)}</span>
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        {isPro && (
+                          earningsExplanations[ticker] ? (
+                            <p className="text-xs text-zinc-400 leading-relaxed">{earningsExplanations[ticker]}</p>
+                          ) : earningsExplainStatuses[ticker] === "loading" ? (
+                            <p className="text-xs text-zinc-500 animate-pulse">Analyzing earnings…</p>
+                          ) : earningsExplainStatuses[ticker] === "error" ? (
+                            <p className="text-xs text-zinc-500">Could not analyze earnings.</p>
+                          ) : (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEarningsExplainStatuses((prev) => ({ ...prev, [ticker]: "loading" }));
+                                generateAuthToken().then((token) =>
+                                  fetch("/api/earnings-explain", {
+                                    method: "POST",
+                                    headers: {
+                                      "Content-Type": "application/json",
+                                      Authorization: `Bearer ${token}`,
+                                      "X-Pro-Token": proToken ?? "",
+                                    },
+                                    body: JSON.stringify({ ticker: data.symbol, quarters, currency }),
+                                  })
+                                )
+                                  .then((r) => r.json())
+                                  .then((res: { explanation?: string; error?: string }) => {
+                                    if (res.error || !res.explanation) {
+                                      setEarningsExplainStatuses((prev) => ({ ...prev, [ticker]: "error" }));
+                                    } else {
+                                      setEarningsExplanations((prev) => ({ ...prev, [ticker]: res.explanation! }));
+                                      setEarningsExplainStatuses((prev) => ({ ...prev, [ticker]: "idle" }));
+                                    }
+                                  })
+                                  .catch(() => setEarningsExplainStatuses((prev) => ({ ...prev, [ticker]: "error" })));
+                              }}
+                              className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+                            >
+                              What do these earnings mean? →
+                            </button>
+                          )
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   <div className="mt-4 pt-4 border-t border-zinc-800">
                     {!isPro ? (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { generateAuthToken } from "../lib/authToken";
 import { getRefreshInterval } from "../lib/marketHours";
 import { useIsPro, useProToken } from "../context/ProContext";
@@ -61,6 +61,28 @@ type ChartState =
   | { status: "ok"; data: HistoryPoint[] }
   | { status: "error" };
 
+interface EarningsQuarter {
+  period: string;
+  reportedDate: string | null;
+  epsEstimate: number;
+  epsActual: number | null;
+  epsDifference: number | null;
+  surprisePercent: number | null;
+  revenue: number | null;
+}
+
+interface EarningsData {
+  quarters: EarningsQuarter[];
+  currency: string;
+}
+
+type EarningsState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "ok"; data: EarningsData }
+  | { status: "unavailable" }
+  | { status: "error" };
+
 function fmt(n: number | null, d = 2) {
   if (n === null) return "—";
   return n.toFixed(d);
@@ -78,6 +100,20 @@ function fmtDate(iso: string): string {
     day: "numeric",
     timeZone: "UTC",
   });
+}
+
+function fmtQuarter(raw: string): string {
+  const m = raw.match(/^(\d)Q(\d{4})$/);
+  if (!m) return raw;
+  return `Q${m[1]} ${m[2]}`;
+}
+
+function fmtRev(n: number, currency: string): string {
+  const sym = currency === "USD" ? "$" : `${currency} `;
+  if (n >= 1e12) return `${sym}${(n / 1e12).toFixed(2)}T`;
+  if (n >= 1e9) return `${sym}${(n / 1e9).toFixed(2)}B`;
+  if (n >= 1e6) return `${sym}${(n / 1e6).toFixed(1)}M`;
+  return `${sym}${n.toFixed(0)}`;
 }
 
 function isPositive(data: QuoteData): boolean {
@@ -303,10 +339,26 @@ function QuoteDetail({
   const proToken = useProToken();
   const [explanation, setExplanation] = useState<string | null>(null);
   const [explainStatus, setExplainStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [earningsState, setEarningsState] = useState<EarningsState>({ status: "idle" });
+  const [earningsExplanation, setEarningsExplanation] = useState<string | null>(null);
+  const [earningsExplainStatus, setEarningsExplainStatus] = useState<"idle" | "loading" | "error">("idle");
 
   useEffect(() => {
     setExplanation(null);
     setExplainStatus("idle");
+    setEarningsExplanation(null);
+    setEarningsExplainStatus("idle");
+    setEarningsState({ status: "loading" });
+    fetch(`/api/earnings?ticker=${data.symbol}`)
+      .then((r) => r.json())
+      .then((res: { quarters?: EarningsQuarter[]; currency?: string; error?: string }) => {
+        if (res.error || !res.quarters || res.quarters.length === 0) {
+          setEarningsState({ status: "unavailable" });
+        } else {
+          setEarningsState({ status: "ok", data: { quarters: res.quarters, currency: res.currency ?? "USD" } });
+        }
+      })
+      .catch(() => setEarningsState({ status: "error" }));
   }, [data.symbol]);
 
   const dailyPositive = isPositive(data);
@@ -521,6 +573,102 @@ function QuoteDetail({
           <span className="text-zinc-600">— {correlationLabel(correlation)}</span>
         </div>
       )}
+
+      {/* Earnings */}
+      {(() => {
+        if (earningsState.status === "loading") return (
+          <div className="mt-4 pt-4 border-t border-zinc-800">
+            <div className="h-3 w-32 bg-zinc-800 rounded animate-pulse mb-3" />
+            <div className="space-y-2">
+              {[0,1,2,3].map((i) => <div key={i} className="h-3 w-full bg-zinc-800 rounded animate-pulse" />)}
+            </div>
+          </div>
+        );
+        if (earningsState.status !== "ok") return null;
+        const { quarters, currency } = earningsState.data;
+        return (
+          <div className="mt-4 pt-4 border-t border-zinc-800">
+            <h3 className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-3">Quarterly Earnings</h3>
+            <div className="divide-y divide-zinc-800/60 mb-3">
+              {[...quarters].reverse().map((q) => {
+                const beat = q.epsDifference != null ? q.epsDifference >= 0 : q.epsActual != null ? q.epsActual >= q.epsEstimate : null;
+                const reportedLabel = q.reportedDate
+                  ? new Date(q.reportedDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })
+                  : null;
+                return (
+                  <div key={q.period} className="py-2.5">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-semibold text-zinc-200">{fmtQuarter(q.period)}</span>
+                      {reportedLabel && (
+                        <span className="text-xs text-zinc-500">Reported {reportedLabel}</span>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
+                      {q.epsActual != null ? (
+                        <>
+                          <span className="text-zinc-400">
+                            Earned <span className="font-medium text-white">${q.epsActual.toFixed(2)}</span>
+                            <span className="text-zinc-600"> per share</span>
+                          </span>
+                          {q.epsDifference != null && (
+                            <span className={`font-medium ${beat ? "text-emerald-400" : "text-red-400"}`}>
+                              &middot; {beat ? "beat" : "missed"} by {beat ? "+" : "−"}${Math.abs(q.epsDifference).toFixed(2)}
+                              {q.surprisePercent != null && ` (${beat ? "+" : ""}${q.surprisePercent.toFixed(1)}%)`}
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-zinc-500">Not yet reported · Est. ${q.epsEstimate.toFixed(2)}/share</span>
+                      )}
+                      {q.revenue != null && (
+                        <span className="text-zinc-500 ml-auto">
+                          Rev <span className="text-zinc-300">{fmtRev(q.revenue, currency)}</span>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {isPro && (
+              earningsExplanation ? (
+                <p className="text-xs text-zinc-400 leading-relaxed">{earningsExplanation}</p>
+              ) : earningsExplainStatus === "loading" ? (
+                <p className="text-xs text-zinc-500 animate-pulse">Analyzing earnings…</p>
+              ) : earningsExplainStatus === "error" ? (
+                <p className="text-xs text-zinc-500">Could not analyze earnings.</p>
+              ) : (
+                <button
+                  onClick={() => {
+                    if (earningsState.status !== "ok") return;
+                    setEarningsExplainStatus("loading");
+                    generateAuthToken().then((token) =>
+                      fetch("/api/earnings-explain", {
+                        method: "POST",
+                        headers: {
+                          "Content-Type": "application/json",
+                          Authorization: `Bearer ${token}`,
+                          "X-Pro-Token": proToken ?? "",
+                        },
+                        body: JSON.stringify({ ticker: data.symbol, quarters, currency }),
+                      })
+                    )
+                      .then((r) => r.json())
+                      .then((res: { explanation?: string; error?: string }) => {
+                        if (res.error || !res.explanation) setEarningsExplainStatus("error");
+                        else { setEarningsExplanation(res.explanation); setEarningsExplainStatus("idle"); }
+                      })
+                      .catch(() => setEarningsExplainStatus("error"));
+                  }}
+                  className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+                >
+                  What do these earnings mean? →
+                </button>
+              )
+            )}
+          </div>
+        );
+      })()}
 
       {/* Explain */}
       <div className="mt-4 pt-4 border-t border-zinc-800">

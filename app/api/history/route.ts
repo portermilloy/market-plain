@@ -47,13 +47,24 @@ export async function GET(request: Request) {
     let rawQuotes = result.quotes.filter((q) => q.close !== null);
 
     if (range === "1d") {
-      // Find the most recent calendar date (ET) that has data, then keep only
-      // that day's quotes starting at 9:30 AM ET (drops pre-market).
       if (rawQuotes.length === 0) {
         return Response.json({ ticker: ticker.toUpperCase(), range, data: [] });
       }
 
-      const mostRecentDate = rawQuotes.reduce((latest, q) => {
+      // Find the most recent date that has actual regular-hours data (>= 9:30 AM ET).
+      // This prevents pre-market quotes from a future date from shadowing the last
+      // full trading session — which is the root cause of the chart going blank
+      // after midnight when Yahoo returns early pre-market bars for "today".
+      const regularQuotes = rawQuotes.filter((q) => {
+        const et = new Date(q.date.toLocaleString("en-US", { timeZone: "America/New_York" }));
+        return et.getHours() * 60 + et.getMinutes() >= 9 * 60 + 30;
+      });
+
+      if (regularQuotes.length === 0) {
+        return Response.json({ ticker: ticker.toUpperCase(), range, data: [] });
+      }
+
+      const mostRecentDate = regularQuotes.reduce((latest, q) => {
         const d = q.date.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
         return d > latest ? d : latest;
       }, "");
