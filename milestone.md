@@ -39,6 +39,15 @@
 
 ---
 
+## Unplanned — Shipped
+
+- [x] **Earnings reports panel** — `/api/earnings` fetches last 4 quarters (EPS estimate vs actual, beat/miss %, reported date, revenue) via `quoteSummary`; rendered in both StockSearch and Watchlist expanded view in plain English ("Earned $1.87/share · beat by +$0.10 (+5.5%)")
+- [x] **AI earnings explanation** — `/api/earnings-explain` Pro-gated POST route; explains what the quarterly results mean in 3-4 sentences; uses prompt caching
+- [x] **EARNS badge improvement** — badge now covers ±2 days around report date; shows "EARNS ✓" for just-reported stocks; quarter labels formatted as "Q1 2026" instead of raw "1Q2026"
+- [x] **1D chart blank-after-midnight fix** — `mostRecentDate` now derived from regular-hours quotes only; pre-market bars from the next calendar day no longer shadow the last real trading session
+
+---
+
 ## Phase 4 — Reliability & Data
 *Any order*
 

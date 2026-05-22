@@ -1,6 +1,6 @@
 # Market Plain — Project Overview
 
-A full-stack financial dashboard built with Next.js 16, React 19, TypeScript, and Tailwind CSS. Displays real-time stock and crypto market data, portfolio tracking, and AI-powered plain-English explanations powered by Claude.
+A full-stack financial dashboard built with Next.js 16, React 19, TypeScript, and Tailwind CSS. Displays real-time stock and crypto market data, portfolio tracking, earnings reports, and AI-powered plain-English explanations powered by Claude.
 
 ---
 
@@ -24,40 +24,58 @@ A full-stack financial dashboard built with Next.js 16, React 19, TypeScript, an
 ```
 market-plain/
 ├── app/
-│   ├── layout.tsx               # Root layout: header, nav, market status
-│   ├── page.tsx                 # Main dashboard page
-│   ├── globals.css              # Tailwind import + CSS variables (dark theme)
+│   ├── layout.tsx                   # Root layout: themed header, nav, market status
+│   ├── page.tsx                     # Landing page (marketing / feature overview)
+│   ├── globals.css                  # Tailwind import + CSS variables (dark/light theme)
+│   ├── dashboard/
+│   │   ├── page.tsx                 # Main dashboard page
+│   │   └── loading.tsx              # Dashboard loading skeleton
 │   ├── crypto/
-│   │   └── page.tsx             # Crypto dashboard page
+│   │   └── page.tsx                 # Crypto dashboard page
 │   ├── upgrade/
-│   │   └── page.tsx             # Pro upgrade landing page
+│   │   └── page.tsx                 # Pro upgrade landing page
 │   ├── api/
-│   │   ├── quote/route.ts       # GET stock/crypto quote
-│   │   ├── history/route.ts     # GET OHLCV price history
-│   │   ├── search/route.ts      # GET ticker autocomplete
-│   │   ├── news/route.ts        # GET top 10 headlines per ticker
-│   │   ├── movers/route.ts      # GET top 5 gainers + losers
-│   │   ├── explain/route.ts     # GET AI explanation of a daily move (Pro)
-│   │   ├── summarize/route.ts   # POST AI summary of news headlines (Pro)
+│   │   ├── quote/route.ts           # GET stock/crypto quote
+│   │   ├── history/route.ts         # GET OHLCV price history
+│   │   ├── search/route.ts          # GET ticker autocomplete
+│   │   ├── news/route.ts            # GET top 10 headlines per ticker
+│   │   ├── movers/route.ts          # GET top 5 gainers + losers
+│   │   ├── earnings/route.ts        # GET last 4 quarters EPS + revenue
+│   │   ├── explain/route.ts         # GET AI explanation of a daily move (Pro)
+│   │   ├── summarize/route.ts       # POST AI summary of news headlines (Pro)
+│   │   ├── earnings-explain/route.ts # POST AI explanation of earnings (Pro)
 │   │   └── portfolio-summary/
-│   │       └── route.ts         # POST AI summary of full portfolio (Pro)
+│   │       └── route.ts             # POST AI summary of full portfolio (Pro)
 │   ├── components/
-│   │   ├── NavLinks.tsx         # Dashboard / Crypto nav tabs
-│   │   ├── MarketStatus.tsx     # Live market open/closed indicator
-│   │   ├── StockSearch.tsx      # Full-width search + quote + chart
-│   │   ├── TickerAutocomplete.tsx # Debounced autocomplete input
-│   │   ├── TopMovers.tsx        # Top 5 gainers and losers
-│   │   ├── SectorHeatmap.tsx    # 11-sector ETF performance grid
-│   │   ├── EarningsCalendar.tsx # Upcoming earnings for watchlist tickers
-│   │   ├── Watchlist.tsx        # Persistent watchlist with expandable rows
-│   │   ├── Portfolio.tsx        # Holdings tracker with charts + AI summary
-│   │   ├── NewsSection.tsx      # Latest headlines per ticker + AI summary
-│   │   └── ArticlePanel.tsx     # Slide-out article detail drawer
+│   │   ├── NavLinks.tsx             # Dashboard / Crypto nav tabs
+│   │   ├── MarketStatus.tsx         # Live market open/closed indicator
+│   │   ├── ThemedHeader.tsx         # Header with theme-aware styling
+│   │   ├── ThemeToggle.tsx          # Dark/light mode toggle button
+│   │   ├── ErrorBoundary.tsx        # React error boundary wrapper
+│   │   ├── OnboardingOverlay.tsx    # First-time 3-step onboarding card
+│   │   ├── StockSearch.tsx          # Full-width search + quote + chart + earnings
+│   │   ├── TickerAutocomplete.tsx   # Debounced autocomplete input
+│   │   ├── TopMovers.tsx            # Top 5 gainers and losers
+│   │   ├── SectorHeatmap.tsx        # 11-sector ETF performance grid
+│   │   ├── EarningsCalendar.tsx     # Upcoming earnings for watchlist tickers
+│   │   ├── Watchlist.tsx            # Persistent watchlist with expanded earnings view
+│   │   ├── Portfolio.tsx            # Holdings tracker with charts + AI summary
+│   │   ├── NewsSection.tsx          # Latest headlines per ticker + AI summary
+│   │   ├── CryptoWidget.tsx         # Crypto price widget on dashboard
+│   │   └── ArticlePanel.tsx         # Slide-out article detail drawer
+│   ├── context/
+│   │   ├── ProContext.tsx           # Unified Pro status context
+│   │   └── ThemeContext.tsx         # Dark/light theme context
 │   └── lib/
-│       └── rateLimit.ts         # In-memory IP rate limiters (AI + data)
+│       ├── rateLimit.ts             # In-memory IP rate limiters (AI + data)
+│       ├── authToken.ts             # HMAC-SHA256 signed token generation/verification
+│       ├── proToken.ts              # Server-side Pro token validation
+│       └── marketHours.ts          # Market hours + refresh interval logic
 ├── PROGRESS.md
+├── milestone.md
+├── PLAN.md
 ├── CLAUDE.md → AGENTS.md
-├── AGENTS.md                    # Agent instructions: read next docs before coding
+├── AGENTS.md
 ├── package.json
 ├── tsconfig.json
 ├── next.config.ts
@@ -69,11 +87,14 @@ market-plain/
 
 ## Pages
 
-### `/` — Dashboard (`app/page.tsx`)
-Client component. Manages three pieces of shared state across all sections:
+### `/` — Landing Page (`app/page.tsx`)
+Marketing page introducing Market Plain. Features overview, call-to-action to open the dashboard.
+
+### `/dashboard` — Dashboard (`app/dashboard/page.tsx`)
+Client component. Manages shared state across all sections:
 - `selectedTicker` — which ticker's news to show (set by clicking a watchlist row)
 - `selectedArticle` — which article to open in the ArticlePanel drawer
-- `isPro` — read from localStorage on mount; defaults to `true` to avoid upgrade banner flash
+- `isPro` — read from `ProContext`
 
 Renders, top to bottom:
 1. **Upgrade banner** — shown to free users, dismissible, links to `/upgrade`
@@ -82,253 +103,179 @@ Renders, top to bottom:
 4. `<TopMovers />`
 5. `<SectorHeatmap />`
 6. `<EarningsCalendar />`
-7. Three-column grid: `<Portfolio />` · `<Watchlist />` · `<NewsSection />` (NewsSection only renders when a ticker is selected)
-8. `<ArticlePanel />` slide-out drawer (renders portal-style over the page)
+7. `<CryptoWidget />`
+8. Three-column grid: `<Portfolio />` · `<Watchlist />` · `<NewsSection />` (NewsSection only renders when a ticker is selected)
+9. `<ArticlePanel />` slide-out drawer
 
 ### `/crypto` — Crypto Dashboard (`app/crypto/page.tsx`)
-Client component tracking 10 major cryptocurrencies: BTC, ETH, BNB, SOL, XRP, DOGE, ADA, AVAX, LINK, DOT.
-
-Features:
-- Coin list with live prices, 24h change, and 7-day sparkline
-- Click to expand any coin into a full chart with volume bars
-- Range selector: 1d / 7d / 30d / 90d / 180d / 1y
-- 60-second auto-refresh (all coins simultaneously)
-- 1D chart filters to market-hours candles (9:30 AM ET onward)
-- Extended-hours candles rendered in amber
-- Dynamic number formatting (handles prices from $0.0001 to $100k+)
-- Chevron toggle indicator per row
+Tracks 10 major cryptocurrencies: BTC, ETH, BNB, SOL, XRP, DOGE, ADA, AVAX, LINK, DOT.
 
 ### `/upgrade` — Pro Upgrade Page (`app/upgrade/page.tsx`)
-Static page listing three Pro features:
-- Unlimited watchlist
-- AI stock explanations
-- One-click news summaries
-
-Shows a "Payments coming soon" notice (Stripe not yet integrated). Links back to dashboard.
+Static page listing Pro features. "Payments coming soon" notice (Stripe not yet integrated).
 
 ---
 
 ## Layout (`app/layout.tsx`)
 
-Wraps every page. Sets:
-- `<html>` with Geist Sans + Geist Mono font variables, `h-full antialiased`
-- `<body>` with dark background (`bg-zinc-950 text-zinc-100`), flex column, no horizontal overflow
-- `<header>`: 14px tall, border-bottom, contains:
-  - "Market Plain" wordmark (left)
-  - `<NavLinks />` (center)
-  - `<MarketStatus />` (right)
+Wraps every page. Provides `ProContext` and `ThemeContext`. Sets:
+- Geist Sans + Geist Mono font variables
+- `<ThemedHeader>` with wordmark, `<NavLinks />`, `<MarketStatus />`, `<ThemeToggle />`
 - `<main>`: flex-1, max-w-7xl, horizontal padding, 8 units vertical padding
-
-Metadata: `title: "Market Plain"`, `description: "The stock market, explained in plain English."`
 
 ---
 
 ## Components
 
-### `NavLinks`
-Two links: **Dashboard** (`/`) and **Crypto** (`/crypto`). Uses `usePathname` to apply active styling (white text + bottom border) vs inactive (zinc-400).
-
-### `MarketStatus`
-Polls every 30 seconds. Computes current Eastern Time and determines one of four states:
-- **Pre-Market** (4:00–9:29 AM ET) — amber dot
-- **Market Open** (9:30 AM–4:00 PM ET, weekdays) — green pulsing dot
-- **After Hours** (4:00–8:00 PM ET) — amber dot
-- **Market Closed** (all other times) — zinc dot
+### `ThemeToggle` / `ThemeContext`
+Dark/light mode toggle in the header. `ThemeContext` stores current theme in localStorage; CSS variable overrides in `globals.css` handle color switching.
 
 ### `StockSearch`
-Full-width search bar at the top of the dashboard. Orchestrates:
-- `<TickerAutocomplete />` for symbol selection
-- Quote fetch on selection, then auto-refreshes every 30 seconds
-- Loading skeleton while fetching
-- Retry button on error
-- Quote display: price, daily change $/, %, pre/after-hours price + change
-- Stats row: P/E ratio, Market Cap, 52-week range, Dividend Yield, Earnings date
-- Range selector: 1d / 7d / 30d / 90d / 1y — fetches from `/api/history`
-- Recharts `AreaChart` — line color is green/red based on selected range performance (not just today)
-- `<Explain />` AI button (Pro feature, lock icon for free users)
-
-### `TickerAutocomplete`
-Reusable controlled input. Behavior:
-- 250ms debounce before calling `/api/search`
-- Dropdown with up to 6 results (symbol, name, type badge)
-- Keyboard navigation: ArrowUp/ArrowDown to move, Enter to select, Escape to close
-- Click-outside ref detection closes dropdown
-- "CRYPTO" badge shown for cryptocurrency results
-
-### `TopMovers`
-Fetches `/api/movers` on mount. Displays two horizontal scrolling rows:
-- **Gainers** (top 5, sorted descending by % change, green)
-- **Losers** (bottom 5, sorted ascending, red)
-
-Each tile shows: symbol, company name, price, and % change.
-
-### `SectorHeatmap`
-Fetches a single quote for each of 11 sector ETFs on mount: XLK (Tech), XLF (Financials), XLV (Health Care), XLY (Consumer Disc.), XLI (Industrials), XLE (Energy), XLP (Consumer Staples), XLU (Utilities), XLRE (Real Estate), XLB (Materials), XLC (Communication).
-
-Color intensity scales in 5 levels based on % change magnitude:
-- >2%: dark green / dark red
-- 1–2%: medium green / red
-- 0.5–1%: light green / red
-- 0–0.5%: faint tint
-- 0%: neutral zinc
-
-Responsive grid: 4 cols (mobile) → 6 cols (tablet) → 11 cols (desktop, all in one row).
-
-### `EarningsCalendar`
-Reads the current watchlist from localStorage. For each ticker with a known `earningsDate` within the next 90 days, renders a card showing:
-- Ticker symbol and company name
-- Earnings date (formatted)
-- Badge: **Today** (same day), **Soon** (within 7 days), or the date itself
-- Sorted by proximity (soonest first)
-
-Only renders the section if at least one upcoming earnings event exists.
+Full-width search bar at the top of the dashboard. Features:
+- `<TickerAutocomplete />` for symbol selection with last-5 search history
+- Quote fetch on selection, 30-second auto-refresh
+- Price, daily change, pre/after-hours price + change
+- Stats row: P/E, Market Cap, 52W range, Dividend Yield, Earnings date
+- Range selector: 1d / 7d / 30d / 90d / 1y
+- Ticker comparison overlay with Pearson correlation score
+- **Quarterly Earnings panel** — loads automatically on ticker select; shows last 4 quarters with reported date, EPS actual vs estimate, beat/miss in plain English, revenue
+- AI earnings explanation button (Pro)
+- AI move explanation button (Pro)
 
 ### `Watchlist`
-State: loaded from localStorage key `watchlist` (defaults: AAPL, MSFT, NVDA, TSLA, VOO). Refreshes all quotes every 60 seconds silently.
+State: loaded from localStorage (defaults: AAPL, MSFT, NVDA, TSLA, VOO). 60-second auto-refresh.
 
-Free tier enforcement: 5-ticker cap. Error message shown if a free user tries to add a 6th.
+Free tier: 5-ticker cap.
 
-Per-ticker row displays:
-- Symbol, company name
-- Current price + daily $/ % change (green/red)
-- 7-day sparkline (Recharts `LineChart`, no axes)
-- **EARNS** badge if earnings are within 7 days
-- Pre/after-hours price + change (amber)
-- Expand/collapse chevron
+Per-ticker row:
+- Symbol, company name, price, daily change (green/red), 7-day sparkline
+- **EARNS** badge within 7 days of report date; **EARNS ✓** within 2 days after report
+- Pre/after-hours price (amber)
+- Bell icon for price alerts (popover, toast notification + browser Notification API)
 
-Expanded row shows:
-- Stats strip: 52W range, P/E, Market Cap, Dividend Yield
-- Range selector: 1D / 7D / 30D / 90D / 1Y
-- `AreaChart` with volume bars (`ComposedChart`)
-- **Explain** AI button (Pro feature, lock icon for free)
-
-Selecting a watchlist row fires `onSelect(ticker)` up to the parent (page.tsx) to show that ticker's news.
+Expanded row:
+- Stats strip: P/E, Market Cap, 52W range, Dividend Yield, Earnings date
+- Range selector: 1D / 7D / 30D / 90D / 1Y with range-change label
+- `ComposedChart` with volume bars; 1D splits regular/extended session
+- **Quarterly Earnings panel** — same as StockSearch; loads on first expand
+- AI earnings explanation button (Pro)
+- AI move explanation button (Pro)
 
 ### `Portfolio`
-State: positions stored in localStorage key `portfolio`. Each position: `{ ticker, shares }`. Quotes fetched on load, refreshed every 60 seconds.
+Positions in localStorage. Each position: `{ ticker, shares, avgBuyPrice }`.
 
-Form: TickerAutocomplete + share count input (validates > 0 and ≤ 1,000,000). Adds position on submit.
+Summary card: total value, daily change, unrealized P&L, Export CSV, AI portfolio summary (Pro).
 
-Summary card shows:
-- Total portfolio value
-- Total daily $ and % change
-- **Export CSV** button (downloads positions as a CSV file)
-- **"What's happening with my portfolio today?"** AI button (Pro feature) — calls `/api/portfolio-summary`
+Positions table: ticker, shares, avg buy price, cost basis, current price, total value, daily change, unrealized gain/loss.
 
-Positions table per holding:
-- Ticker, shares, current price, total value, daily $ and % change
-- Remove button
+Allocation donut chart + 90-day portfolio value history line chart.
 
-Allocation donut chart: `PieChart` from Recharts, each slice proportional to position value.
+### `EarningsCalendar`
+Reads watchlist from localStorage. Shows upcoming earnings within 90 days sorted by proximity. Badges: **Today**, **Soon** (≤7 days), or formatted date.
 
-90-day value history chart: one snapshot per day stored in localStorage, rendered as a `LineChart`. Green/red line based on whether current total is above the first snapshot.
+### `TopMovers`
+Fetches `/api/movers` on mount. Two rows: gainers (green) and losers (red). 30-minute server-side cache.
 
-Empty state message shown when no positions are added.
+### `SectorHeatmap`
+11 sector ETFs. Color intensity in 5 levels by % change magnitude. Auto-refreshes. Responsive: 4→6→11 columns.
+
+### `CryptoWidget`
+Live prices for major crypto assets on the dashboard.
 
 ### `NewsSection`
-Fetches top 10 articles from `/api/news?ticker=X`. Displays the 5 most recent with:
-- Headline (clickable — fires `onArticleClick` to open the ArticlePanel)
-- Publisher name + time ago (e.g. "3h ago")
-- **Summarize** AI button at the top (Pro feature) — calls `/api/summarize` with all headline strings
+Top 10 articles from `/api/news?ticker=X`. 5 most recent shown. AI Summarize button (Pro).
 
 ### `ArticlePanel`
-Slide-out drawer from the right edge. Renders when `article` prop is non-null:
-- Semi-transparent backdrop (click to close)
-- White panel: article title, source, formatted publish date, link to original URL
-- Close button (✕) in top-right corner
+Slide-out drawer. Title, source, date, link to original article.
+
+### `OnboardingOverlay`
+3-step first-time onboarding card, dismissed to localStorage.
+
+### `ErrorBoundary`
+Wraps every major dashboard section to prevent one component failure from crashing the page.
 
 ---
 
 ## API Routes
 
-All routes live under `app/api/` and are Next.js Route Handlers.
-
 ### `GET /api/quote?ticker=AAPL`
-Returns: `symbol`, `name`, `price`, `change`, `changePercent`, `volume`, `marketState`, `preMarketPrice/Change/ChangePercent`, `postMarketPrice/Change/ChangePercent`, `pe`, `marketCap`, `high52w`, `low52w`, `dividendYield`, `earningsDate`.
+Returns: `symbol`, `name`, `price`, `change`, `changePercent`, `volume`, `marketState`, pre/post-market fields, `pe`, `marketCap`, `high52w`, `low52w`, `dividendYield`, `earningsDate`.
 
-Rate limited: 200 req/IP/hr (data limiter).
+Rate limited: 200 req/IP/hr.
 
-### `GET /api/history?ticker=AAPL&range=30d`
+### `GET /api/history?ticker=AAPL&range=1d`
 Valid ranges: `1d`, `7d`, `30d`, `90d`, `180d`, `1y`.
 
-Interval mapping:
-- 1d → 5-minute candles (filtered to current trading day, ET 9:30 AM+)
-- 7d → 1-hour candles
-- 30d / 90d / 180d / 1y → daily candles
+- `1d` → 5-minute candles. Filters to most recent trading session with regular-hours data (≥9:30 AM ET). Pre-market bars from the next calendar day are excluded so the chart never goes blank after midnight.
+- `7d` → 1-hour candles
+- `30d / 90d / 180d / 1y` → daily candles
 
-Returns array of `{ date, close, volume?, session? }`. For 1d, each point includes `session: "regular" | "extended"`.
-
-Not rate-limited (called frequently for charts).
+Returns `{ date, close, volume?, session? }`. 1D points include `session: "regular" | "extended"`.
 
 ### `GET /api/search?q=apple`
-Returns up to 6 autocomplete results: `{ symbol, name, type }`. Filters to EQUITY, ETF, INDEX, CRYPTOCURRENCY types only.
+Up to 6 autocomplete results: `{ symbol, name, type }`. Filters to EQUITY, ETF, INDEX, CRYPTOCURRENCY.
 
-Rate limited: 200 req/IP/hr (data limiter).
+Rate limited: 200 req/IP/hr.
+
+### `GET /api/earnings?ticker=AAPL`
+Returns last 4 quarters of earnings data: `{ period, reportedDate, epsEstimate, epsActual, epsDifference, surprisePercent, revenue, currency }`.
+
+Uses `quoteSummary` with `earnings` module. `reportedDate` is the actual earnings release date from `earningsChart.quarterly.reportedDate`. Falls back to unavailable gracefully (ETFs, crypto return 404).
+
+Rate limited: 200 req/IP/hr.
 
 ### `GET /api/news?ticker=AAPL`
-Returns up to 10 news articles: `{ title, source, url, publishedAt }`. Uses `yahooFinance.search` with `newsCount: 10, quotesCount: 0`.
+Up to 10 articles: `{ title, source, url, publishedAt }`.
 
-Rate limited: 200 req/IP/hr (data limiter).
+Rate limited: 200 req/IP/hr.
 
 ### `GET /api/movers`
-Returns `{ gainers: MoverItem[], losers: MoverItem[] }`. Each item: `{ symbol, name, price, changePercent }`.
-
-Universe: 25 large-cap stocks — AAPL, MSFT, NVDA, TSLA, GOOGL, AMZN, META, JPM, V, UNH, XOM, WMT, LLY, AVGO, PG, MA, COST, AMD, NFLX, DIS, BA, GS, UBER, SPOT, INTC.
-
-Server-side in-memory cache: 5-minute TTL. Not rate-limited.
+`{ gainers: MoverItem[], losers: MoverItem[] }`. Universe of 25 large-cap stocks. 30-minute server-side cache.
 
 ### `GET /api/explain?ticker=AAPL&price=213.50&changePercent=-2.3`
-**Pro feature.** Requires `x-app-client: market-plain` header (401 if missing).
+**Pro. Auth required.** Claude Haiku, 300 tokens. Returns `{ explanation }`.
 
-Calls Claude Haiku (`claude-haiku-4-5-20251001`), `max_tokens: 300`. System prompt cached with `cache_control: ephemeral`. Returns `{ explanation }`.
-
-Rate limited: 20 req/IP/hr (AI limiter).
+Rate limited: 20 req/IP/hr.
 
 ### `POST /api/summarize`
-**Pro feature.** Body: `{ ticker: string, headlines: string[] }`. Requires `x-app-client: market-plain` header.
+**Pro. Auth required.** Body: `{ ticker, headlines[] }`. Claude Haiku, 400 tokens. Returns `{ summary }`.
 
-Calls Claude Haiku, `max_tokens: 400`. System prompt cached. Returns `{ summary }`.
+Rate limited: 20 req/IP/hr.
 
-Rate limited: 20 req/IP/hr (AI limiter).
+### `POST /api/earnings-explain`
+**Pro. Auth required.** Body: `{ ticker, quarters[], currency }`. Claude Haiku, 400 tokens. Explains what the quarterly earnings results mean in plain English. Returns `{ explanation }`.
+
+Rate limited: 20 req/IP/hr.
 
 ### `POST /api/portfolio-summary`
-**Pro feature.** Body: `{ positions: PositionInput[], totalValue, totalChange, totalChangePct }`. Requires `x-app-client: market-plain` header.
+**Pro. Auth required.** Body: `{ positions[], totalValue, totalChange, totalChangePct }`. Claude Haiku, 400 tokens. Returns `{ summary }`.
 
-Positions sorted by absolute % change before being sent to Claude. Calls Claude Haiku, `max_tokens: 400`. System prompt cached. Returns `{ summary }`.
-
-Rate limited: 20 req/IP/hr (AI limiter).
+Rate limited: 20 req/IP/hr.
 
 ---
 
-## Utilities
+## Security
 
-### `app/lib/rateLimit.ts`
-Two `RateLimiterMemory` instances:
-- **`aiLimiter`** — 20 points / 3600 seconds per IP
-- **`dataLimiter`** — 200 points / 3600 seconds per IP
+All AI routes require:
+1. `Authorization: Bearer <HMAC-SHA256 token>` — signed with `NEXT_PUBLIC_MARKET_PLAIN_API_SECRET`, valid for 60 seconds
+2. `X-Pro-Token` header matching a value in `PRO_BYPASS_TOKENS` env var
 
-`getIp(request)` — reads `x-forwarded-for` (first value), falls back to `x-real-ip`, then `"unknown"`.
-
-`checkRateLimit(ip)` — consumes 1 point from `aiLimiter`, returns `{ allowed, remaining }`. If IP is `"unknown"`, always allows.
-
-`checkDataRateLimit(ip)` — consumes 1 point from `dataLimiter`, returns `{ allowed }`. If IP is `"unknown"`, always allows.
+Data routes are rate-limited but do not require auth.
 
 ---
 
 ## AI Integration
 
-All three AI routes use the same pattern:
+All AI routes:
 - Model: `claude-haiku-4-5-20251001`
-- Prompt caching: `cache_control: { type: "ephemeral" }` on system prompts, sent with `anthropic-beta: prompt-caching-2024-07-31` header
-- Client header guard: `x-app-client: market-plain` (401 if absent)
+- Prompt caching: `cache_control: { type: "ephemeral" }` on system prompts
 - Rate limit: 20 req/IP/hr
 
-**System prompt styles:**
-- `/explain` — financial analyst explaining a single stock's daily move (2-3 sentences, no bullets)
-- `/summarize` — news analyst summarizing headlines for a ticker (3-4 sentences, no bullets)
-- `/portfolio-summary` — portfolio analyst summarizing cross-portfolio activity (3-4 sentences, no bullets)
-
-**Frontend guard:** AI buttons show a lock icon for free users and display an "upgrade" message instead of calling the API.
+| Route | Prompt style |
+|---|---|
+| `/explain` | Financial analyst, 2-3 sentences on daily move |
+| `/summarize` | News analyst, 3-4 sentences on headlines |
+| `/earnings-explain` | Financial analyst, 3-4 sentences on quarterly results |
+| `/portfolio-summary` | Portfolio analyst, 3-4 sentences on cross-portfolio activity |
 
 ---
 
@@ -337,47 +284,45 @@ All three AI routes use the same pattern:
 | Feature | Free | Pro |
 |---|---|---|
 | Watchlist tickers | 5 max | Unlimited |
-| AI stock explanations | Locked (lock icon) | Unlocked |
-| AI news summaries | Locked (lock icon) | Unlocked |
-| AI portfolio summary | Locked (lock icon) | Unlocked |
-
-`isPro` is currently stored as a localStorage flag (`"true"`/`"false"`). The AI routes do **not** verify Pro status server-side — the `x-app-client` header is the only server-side guard. Stripe integration and real auth are not yet implemented.
+| AI move explanations | Locked | Unlocked |
+| AI news summaries | Locked | Unlocked |
+| AI earnings explanations | Locked | Unlocked |
+| AI portfolio summary | Locked | Unlocked |
 
 ---
 
 ## Data Refresh Intervals
 
-| Component | Refresh Interval |
+| Component | Interval |
 |---|---|
 | MarketStatus | 30 seconds |
 | StockSearch (active ticker) | 30 seconds |
 | Watchlist quotes | 60 seconds |
 | Portfolio quotes | 60 seconds |
 | Crypto page | 60 seconds |
-| TopMovers (client) | On mount only |
+| TopMovers (server cache) | 30-minute TTL |
 | SectorHeatmap | On mount only |
-| TopMovers (server cache) | 5-minute TTL |
 
 ---
 
 ## Known Issues
 
-- **isPro flash** — `isPro` defaults to `true` in `page.tsx` to prevent the upgrade banner from flashing in. Portfolio and Watchlist default to `false`, so lock icons flash for one frame. Needs a unified client-side `isPro` context.
-- **Watchlist explanation reset** — AI explanation state is not per-ticker; collapsing and re-expanding a row clears the explanation text.
-- **In-memory rate limiter** — does not survive server restarts. Needs Redis for production.
-- **`"unknown"` IP bucket** — all requests without IP headers share one rate limit bucket. Needs proper reverse proxy config in production.
-- **No error boundaries** — a runtime error in any component crashes the full page. Each major section should be wrapped in a React `ErrorBoundary`.
-- **Quote refresh when market is closed** — all components refresh on a fixed interval regardless of market hours. Should pause or extend interval outside trading hours.
-- **SectorHeatmap never refreshes** — fetches once on mount only.
+- **In-memory rate limiter** — does not survive server restarts; needs Redis for production
+- **SectorHeatmap never refreshes** — fetches once on mount only
+- **No mobile layout** — dashboard grid is not optimized for small screens
+- **No error states on several components** — TopMovers, SectorHeatmap lack user-facing error UI
 
 ---
 
 ## Not Yet Built
 
-- **Stripe payments** — `/upgrade` page exists, no checkout, no webhook, no session
-- **Real authentication** — `isPro` is a trivially bypassable localStorage flag
-- **Database persistence** — watchlist and portfolio live in localStorage only; cleared on browser wipe
-- **Per-user rate limiting** — currently IP-based; shared IPs (offices, VPNs) share limits
-- **Server-side Pro gating** — AI routes don't verify Pro status; needs real session/token check
-- **Ticker comparison** — side-by-side chart with correlation score
-- **Cost basis and P&L tracking** — removed in a prior session; would need avg buy price field and unrealized gain/loss calculation
+- **Stripe payments** — `/upgrade` page exists, no checkout or webhook
+- **Real authentication** — `isPro` is a localStorage flag; AI routes use HMAC + Pro token, not real user sessions
+- **Database persistence** — watchlist and portfolio live in localStorage only
+- **Redis rate limiting** — in-memory only for now; shared across restarts
+- **`marketData.ts` abstraction** — no structured fallback when yahoo-finance2 fails
+- **Ticker delay notice** — no "prices may be delayed" label for crypto in StockSearch
+- **`useVisibilityRefresh` hook** — intervals run even when tab is hidden
+- **Keyboard shortcuts** — `/`, `Cmd+K`, `Esc` not yet wired up
+- **GitHub Actions CI** — no automated TypeScript/ESLint checks on push
+- **Vercel deployment** — not yet deployed to production

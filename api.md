@@ -10,14 +10,16 @@ Tracks every external API and internal route used or evaluated throughout the bu
 
 | Route | Method | Purpose | Status | Notes |
 | --- | --- | --- | --- | --- |
-| `/api/quote` | GET | Single ticker quote | Live | Retry added; needs null-check for delisted tickers (Step 19) |
-| `/api/history` | GET | Price history for chart | Live | |
+| `/api/quote` | GET | Single ticker quote | Live | Retry on failure |
+| `/api/history` | GET | Price history for chart | Live | 1d blank-after-midnight fix shipped |
 | `/api/search` | GET | Ticker autocomplete | Live | |
-| `/api/movers` | GET | Top gainers/losers | Live | TTL bumped to 30 min |
+| `/api/movers` | GET | Top gainers/losers | Live | 30-min server-side TTL cache |
 | `/api/news` | GET | Ticker news feed | Live | |
-| `/api/explain` | POST | AI ticker explanation | Live | No server-side Pro gate yet (Step 7) |
-| `/api/summarize` | POST | AI news summary | Live | No server-side Pro gate yet (Step 7) |
-| `/api/portfolio-summary` | POST | AI portfolio analysis | Live | No server-side Pro gate yet (Step 7) |
+| `/api/earnings` | GET | Last 4 quarters EPS + revenue | Live | Uses `quoteSummary`; includes reported date, beat/miss, surprise % |
+| `/api/explain` | GET | AI ticker explanation | Live | HMAC auth + Pro token required |
+| `/api/summarize` | POST | AI news summary | Live | HMAC auth + Pro token required |
+| `/api/earnings-explain` | POST | AI earnings analysis | Live | HMAC auth + Pro token required |
+| `/api/portfolio-summary` | POST | AI portfolio analysis | Live | HMAC auth + Pro token required |
 | `/api/checkout` | POST | Stripe checkout session | Planned | Step 17 |
 | `/api/webhook` | POST | Stripe webhook handler | Planned | Step 17 |
 
@@ -34,10 +36,10 @@ Tracks every external API and internal route used or evaluated throughout the bu
 
 ### Anthropic Claude API
 - **Status:** In use
-- **Used for:** `/api/explain`, `/api/summarize`, `/api/portfolio-summary`
-- **Model:** Confirm current model ID in route files
+- **Used for:** `/api/explain`, `/api/summarize`, `/api/earnings-explain`, `/api/portfolio-summary`
+- **Model:** `claude-haiku-4-5-20251001`
 - **Auth:** `ANTHROPIC_API_KEY` in `.env.local`
-- **Gating:** Currently header-only check — server-side Pro gate planned (Step 7)
+- **Gating:** HMAC-SHA256 signed token (`NEXT_PUBLIC_MARKET_PLAIN_API_SECRET`) + `PRO_BYPASS_TOKENS` server-side check on all AI routes
 
 ### Stripe
 - **Status:** Not integrated
@@ -77,9 +79,9 @@ Tracks every external API and internal route used or evaluated throughout the bu
 | Variable | Used in | Required | Notes |
 | --- | --- | --- | --- |
 | `ANTHROPIC_API_KEY` | AI routes | Yes | |
-| `MARKET_PLAIN_API_SECRET` | All API routes | Planned | Step 6 |
-| `PRO_BYPASS_TOKENS` | AI routes | Planned | Step 7 — comma-separated |
-| `REDIS_URL` | Rate limiter | Prod only | Step 8 |
+| `NEXT_PUBLIC_MARKET_PLAIN_API_SECRET` | HMAC token signing (client + server) | Yes | Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
+| `PRO_BYPASS_TOKENS` | AI route Pro gate | Yes | Comma-separated tokens until Stripe is live |
+| `REDIS_URL` | Rate limiter | Prod only | In-memory fallback used if not set |
 | `STRIPE_SECRET_KEY` | `/api/checkout`, `/api/webhook` | Planned | Step 17 |
 | `STRIPE_WEBHOOK_SECRET` | `/api/webhook` | Planned | Step 17 |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Client-side Stripe | Planned | Step 17 |
