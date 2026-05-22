@@ -67,7 +67,7 @@ function UpgradeButton() {
         disabled={loading}
         className="w-full rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-medium py-3 px-5 transition-colors"
       >
-        {loading ? "Redirecting to checkout…" : "Upgrade to Pro — $9.99 / month"}
+        {loading ? "Redirecting to checkout…" : "Upgrade to Pro — $7.99 / month"}
       </button>
       {error && <p className="text-xs text-red-400 text-center">{error}</p>}
       <p className="text-xs text-zinc-600 text-center">
@@ -107,12 +107,12 @@ export default function UpgradePage() {
 
       <div className="rounded-lg border border-zinc-700 bg-zinc-900 px-5 py-6 flex flex-col gap-4">
         <div className="text-center">
-          <p className="text-3xl font-semibold text-white">$9.99</p>
+          <p className="text-3xl font-semibold text-white">$7.99</p>
           <p className="text-sm text-zinc-500">per month · cancel anytime</p>
         </div>
         <Suspense fallback={
           <button disabled className="w-full rounded-lg bg-indigo-600 opacity-60 text-white text-sm font-medium py-3 px-5">
-            Upgrade to Pro — $9.99 / month
+            Upgrade to Pro — $7.99 / month
           </button>
         }>
           <UpgradeButton />
