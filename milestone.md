@@ -35,7 +35,7 @@
 - [x] **14** — Add price alerts to Watchlist (bell icon, popover, toast + Notification API)
 - [x] **15** — Add dark/light mode toggle in header; `ThemeContext`; CSS variable overrides in `globals.css`
 - [x] **16** — Add landing page at `/`; move dashboard to `/dashboard`
-- [ ] **17** — Integrate Stripe for Pro payments (checkout session, webhook, real Pro token)
+- [x] **17** — Integrate Stripe for Pro payments (checkout session, webhook, real Pro token)
 
 ---
 

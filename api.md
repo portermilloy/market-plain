@@ -20,8 +20,9 @@ Tracks every external API and internal route used or evaluated throughout the bu
 | `/api/summarize` | POST | AI news summary | Live | HMAC auth + Pro token required |
 | `/api/earnings-explain` | POST | AI earnings analysis | Live | HMAC auth + Pro token required |
 | `/api/portfolio-summary` | POST | AI portfolio analysis | Live | HMAC auth + Pro token required |
-| `/api/checkout` | POST | Stripe checkout session | Planned | Step 17 |
-| `/api/webhook` | POST | Stripe webhook handler | Planned | Step 17 |
+| `/api/checkout` | POST | Stripe checkout session | Live | Returns `{ url }` for redirect |
+| `/api/webhook` | POST | Stripe webhook handler | Live | Verifies signature; handles `checkout.session.completed` |
+| `/api/verify-session` | GET | Verify Stripe session + issue Pro token | Live | Called from `/upgrade/success` after redirect |
 
 ---
 
@@ -42,10 +43,13 @@ Tracks every external API and internal route used or evaluated throughout the bu
 - **Gating:** HMAC-SHA256 signed token (`NEXT_PUBLIC_MARKET_PLAIN_API_SECRET`) + `PRO_BYPASS_TOKENS` server-side check on all AI routes
 
 ### Stripe
-- **Status:** Not integrated
-- **Needed for:** Step 17 — real Pro payments
-- **Decisions pending:** Checkout vs Payment Links, pricing model (→ [research.md](research.md))
-- **Env vars needed:** `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`
+- **Status:** Integrated (Step 17)
+- **Used for:** `/api/checkout`, `/api/webhook`, `/api/verify-session`
+- **Mode:** Subscription — $9.99/month
+- **Pro token flow:** Payment completes → Stripe redirects to `/upgrade/success?session_id=xxx` → `/api/verify-session` verifies session with Stripe → generates HMAC-signed Pro token → stored in localStorage
+- **Token format:** `stripe.{checkoutSessionId}.{hmac-sha256}` — verifiable server-side without a database
+- **Known limitation:** Subscription cancellations do not revoke stored tokens (requires a database for revocation; noted as future work)
+- **Env vars:** `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`
 
 ---
 
@@ -82,6 +86,7 @@ Tracks every external API and internal route used or evaluated throughout the bu
 | `NEXT_PUBLIC_MARKET_PLAIN_API_SECRET` | HMAC token signing (client + server) | Yes | Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
 | `PRO_BYPASS_TOKENS` | AI route Pro gate | Yes | Comma-separated tokens until Stripe is live |
 | `REDIS_URL` | Rate limiter | Prod only | In-memory fallback used if not set |
-| `STRIPE_SECRET_KEY` | `/api/checkout`, `/api/webhook` | Planned | Step 17 |
-| `STRIPE_WEBHOOK_SECRET` | `/api/webhook` | Planned | Step 17 |
-| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Client-side Stripe | Planned | Step 17 |
+| `STRIPE_SECRET_KEY` | `/api/checkout`, `/api/webhook`, `/api/verify-session` | Yes | From Stripe dashboard → Developers → API keys |
+| `STRIPE_WEBHOOK_SECRET` | `/api/webhook` | Yes | From Stripe dashboard → Webhooks → signing secret |
+| `STRIPE_PRICE_ID` | `/api/checkout` | Yes | From Stripe dashboard → Products → price ID (e.g. `price_xxx`) |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Client-side Stripe (future) | Optional | Not used yet; reserved for client-side Stripe Elements |

@@ -316,7 +316,7 @@ All AI routes:
 
 ## Not Yet Built
 
-- **Stripe payments** — `/upgrade` page exists, no checkout or webhook
+- **Stripe payments** — integrated: checkout, webhook, verify-session routes live; requires Stripe keys in `.env.local`
 - **Real authentication** — `isPro` is a localStorage flag; AI routes use HMAC + Pro token, not real user sessions
 - **Database persistence** — watchlist and portfolio live in localStorage only
 - **Redis rate limiting** — in-memory only for now; shared across restarts

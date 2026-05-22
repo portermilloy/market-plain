@@ -50,3 +50,7 @@ export function useIsPro() {
 export function useProToken() {
   return useContext(ProContext).proToken;
 }
+
+export function useProContext() {
+  return useContext(ProContext);
+}
