@@ -40,7 +40,8 @@ export async function verifyAuthToken(authHeader: string | null): Promise<boolea
   if (isNaN(timestamp) || Math.abs(Math.floor(Date.now() / 1000) - timestamp) > 60) return false;
   try {
     const key = await hmacKey(secret, ["verify"]);
-    return crypto.subtle.verify("HMAC", key, hexToBytes(sig), new TextEncoder().encode(ts));
+    const sigBytes = hexToBytes(sig);
+    return crypto.subtle.verify("HMAC", key, sigBytes.buffer.slice(sigBytes.byteOffset, sigBytes.byteOffset + sigBytes.byteLength) as ArrayBuffer, new TextEncoder().encode(ts));
   } catch {
     return false;
   }

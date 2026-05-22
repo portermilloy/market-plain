@@ -1,5 +1,6 @@
 "use client";
 
+import type React from "react";
 import { unstable_catchError as catchError, type ErrorInfo } from "next/error";
 
 function ErrorFallback(_props: Record<string, never>, { unstable_retry }: ErrorInfo) {
@@ -16,4 +17,4 @@ function ErrorFallback(_props: Record<string, never>, { unstable_retry }: ErrorI
   );
 }
 
-export default catchError(ErrorFallback);
+export default catchError(ErrorFallback) as React.ComponentType<{ children?: React.ReactNode }>;

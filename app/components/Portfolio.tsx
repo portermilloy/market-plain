@@ -461,7 +461,7 @@ export default function Portfolio() {
                   <Tooltip
                     contentStyle={{ background: "#18181b", border: "1px solid #3f3f46", borderRadius: 6, fontSize: 12 }}
                     itemStyle={{ color: "#e4e4e7" }}
-                    formatter={(_: number, __: string, entry: { payload?: { ticker: string; pctOfTotal: number } }) => [
+                    formatter={(_: unknown, __: unknown, entry: { payload?: { ticker: string; pctOfTotal: number } }) => [
                       `${entry.payload?.pctOfTotal.toFixed(1)}%`,
                       entry.payload?.ticker ?? "",
                     ]}
@@ -538,8 +538,8 @@ export default function Portfolio() {
                           <Tooltip
                             contentStyle={{ background: "#18181b", border: "1px solid #3f3f46", borderRadius: 6, fontSize: 11 }}
                             itemStyle={{ color: "#e4e4e7" }}
-                            formatter={(v: number) => [currency(v), "Value"]}
-                            labelFormatter={(l: string) => new Date(l).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })}
+                            formatter={(v: unknown) => [currency(v as number), "Value"]}
+                            labelFormatter={(l: unknown) => new Date(l as string).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })}
                           />
                           <Area
                             type="monotone"

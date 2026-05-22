@@ -164,8 +164,8 @@ function ExpandedChart({ data, color, range }: { data: HistoryPoint[]; color: st
           contentStyle={{ background: "#18181b", border: "1px solid #3f3f46", borderRadius: 6, fontSize: 12 }}
           itemStyle={{ color: "#e4e4e7" }}
           labelStyle={{ color: "#71717a" }}
-          formatter={(v: number) => [fmtPrice(v), "Price"]}
-          labelFormatter={(label: string) => tooltipLabelFmt(label)}
+          formatter={(v: unknown) => [fmtPrice(v as number), "Price"]}
+          labelFormatter={(label: unknown) => tooltipLabelFmt(label as string)}
         />
         <Area
           type="monotone"

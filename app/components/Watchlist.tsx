@@ -227,7 +227,7 @@ function ExpandedChart({
 
   return (
     <ResponsiveContainer width="100%" height={180}>
-      <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+      <ComposedChart data={chartData as object[]} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
         <XAxis
           dataKey="date"
           tickFormatter={(d: string) =>
@@ -268,37 +268,40 @@ function ExpandedChart({
           }}
           itemStyle={{ color: "#e4e4e7" }}
           labelStyle={{ color: "#71717a" }}
-          formatter={(v: number, name: string) => {
-            if (name === "volume")
+          formatter={(v: unknown, name: unknown) => {
+            const val = v as number;
+            const n = name as string;
+            if (n === "volume")
               return [
-                v >= 1e6
-                  ? `${(v / 1e6).toFixed(1)}M`
-                  : v >= 1e3
-                  ? `${(v / 1e3).toFixed(0)}K`
-                  : v.toString(),
+                val >= 1e6
+                  ? `${(val / 1e6).toFixed(1)}M`
+                  : val >= 1e3
+                  ? `${(val / 1e3).toFixed(0)}K`
+                  : val.toString(),
                 "Volume",
               ];
             return [
-              `$${v.toFixed(2)}`,
-              name === "extended" ? "After Hours" : "Price",
+              `$${val.toFixed(2)}`,
+              n === "extended" ? "After Hours" : "Price",
             ];
           }}
-          labelFormatter={(label: string) =>
-            intraday
-              ? new Date(label).toLocaleString("en-US", {
+          labelFormatter={(label: unknown) => {
+            const l = label as string;
+            return intraday
+              ? new Date(l).toLocaleString("en-US", {
                   month: "short",
                   day: "numeric",
                   hour: "numeric",
                   minute: "2-digit",
                   timeZone: "America/New_York",
                 })
-              : new Date(label).toLocaleDateString("en-US", {
+              : new Date(l).toLocaleDateString("en-US", {
                   month: "short",
                   day: "numeric",
                   year: "numeric",
                   timeZone: "UTC",
-                })
-          }
+                });
+          }}
         />
         {/* Volume bars */}
         <Bar
