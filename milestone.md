@@ -35,7 +35,7 @@
 - [x] **14** — Add price alerts to Watchlist (bell icon, popover, toast + Notification API)
 - [x] **15** — Add dark/light mode toggle in header; `ThemeContext`; CSS variable overrides in `globals.css`
 - [x] **16** — Add landing page at `/`; move dashboard to `/dashboard`
-- [ ] **17** — Integrate Stripe for Pro payments (checkout session, webhook, real Pro token) — do after turning 18 on May 26
+- [x] **17** — Integrate Stripe for Pro payments (checkout session, webhook, real Pro token)
 
 ---
 
@@ -85,7 +85,7 @@
 ---
 
 ## Phase 8 — Payments & Pro Verification
-*Do after turning 18 and deploying*
+*Do after deploying*
 
 - [ ] **39** — Create Stripe account, verify identity with government ID, connect bank account for payouts
 - [ ] **40** — Create a "Market Plain Pro" product at `$7.99/month` in the Stripe dashboard
@@ -113,7 +113,6 @@
 
 ## Notes
 
-- Anthropic account created after May 26 — AI features not testable until then
 - Use `localStorage.setItem('isPro', 'true')` in browser console to test Pro features locally without paying
 - Vercel AI Gateway has $5/month in free credits — can use to test AI routes before Anthropic key is set up
 - Mobile layout fixes (step 23) and server-side cache (step 21) are the two most important steps before sharing the link publicly

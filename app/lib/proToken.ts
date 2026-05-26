@@ -2,7 +2,7 @@ import { createHmac } from "crypto";
 
 /** Generates a server-signed Pro token tied to a Stripe checkout session ID. */
 export function generateProToken(sessionId: string): string {
-  const secret = process.env.NEXT_PUBLIC_MARKET_PLAIN_API_SECRET ?? "";
+  const secret = process.env.PRO_TOKEN_SECRET ?? "";
   const sig = createHmac("sha256", secret).update(sessionId).digest("hex");
   return `stripe.${sessionId}.${sig}`;
 }
@@ -28,7 +28,7 @@ export function isValidProToken(token: string | null): boolean {
   if (lastDot < 1) return false;
   const sessionId = rest.slice(0, lastDot);
   const sig = rest.slice(lastDot + 1);
-  const secret = process.env.NEXT_PUBLIC_MARKET_PLAIN_API_SECRET ?? "";
+  const secret = process.env.PRO_TOKEN_SECRET ?? "";
   if (!secret) return false;
   const expected = createHmac("sha256", secret).update(sessionId).digest("hex");
   return expected === sig;
