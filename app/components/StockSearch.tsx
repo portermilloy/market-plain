@@ -54,7 +54,8 @@ type QuoteState =
   | { status: "idle" }
   | { status: "loading" }
   | { status: "ok"; data: QuoteData }
-  | { status: "error" };
+  | { status: "error" }
+  | { status: "notFound" };
 
 type ChartState =
   | { status: "idle" }
@@ -777,10 +778,15 @@ export default function StockSearch() {
 
     fetch(`/api/quote?ticker=${sym}`)
       .then((r) => r.json())
-      .then((data: QuoteData & { error?: string; fallback?: boolean }) => {
+      .then((data: QuoteData & { error?: string; fallback?: boolean; notFound?: boolean }) => {
         if (data.error) {
-          setDataFallback(data.fallback === true);
-          setQuote({ status: "error" });
+          if (data.notFound) {
+            setDataFallback(false);
+            setQuote({ status: "notFound" });
+          } else {
+            setDataFallback(data.fallback === true);
+            setQuote({ status: "error" });
+          }
         } else {
           setDataFallback(false);
           setQuote({ status: "ok", data });
@@ -867,6 +873,14 @@ export default function StockSearch() {
 
       {dataFallback && <FallbackBanner />}
 
+      {quote.status === "notFound" && (
+        <div className="rounded-lg border border-zinc-800 px-5 py-4">
+          <p className="text-sm text-zinc-500">
+            <span className="text-zinc-300">{ticker}</span> was not found. It may be delisted or an invalid symbol.
+          </p>
+        </div>
+      )}
+
       {quote.status === "error" && (
         <div className="rounded-lg border border-zinc-800 px-5 py-4 flex items-center justify-between">
           <span className="text-sm text-zinc-500">Could not load data for {ticker}.</span>
@@ -876,9 +890,10 @@ export default function StockSearch() {
               setQuote({ status: "loading" });
               fetch(`/api/quote?ticker=${ticker}`)
                 .then((r) => r.json())
-                .then((data: QuoteData & { error?: string }) => {
-                  if (data.error) setQuote({ status: "error" });
-                  else setQuote({ status: "ok", data });
+                .then((data: QuoteData & { error?: string; notFound?: boolean }) => {
+                  if (data.notFound) setQuote({ status: "notFound" });
+                  else if (data.error) setQuote({ status: "error" });
+                  else setQuote({ status: "ok", data: data as QuoteData });
                 })
                 .catch(() => setQuote({ status: "error" }));
               loadChart(ticker, range);

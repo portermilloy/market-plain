@@ -2,7 +2,7 @@ import YahooFinance from "yahoo-finance2";
 
 const yf = new YahooFinance();
 
-export type MarketDataError = { error: true; message: string; fallback: true };
+export type MarketDataError = { error: true; message: string; fallback: true; notFound?: true };
 
 export function isDataError(v: unknown): v is MarketDataError {
   return (
@@ -26,15 +26,24 @@ function dataError(message: string): MarketDataError {
   return { error: true, message, fallback: true };
 }
 
+function notFoundError(ticker: string): MarketDataError {
+  return { error: true, message: `${ticker.toUpperCase()} not found or delisted`, fallback: true, notFound: true };
+}
+
 export async function getQuote(
   ticker: string
 ): Promise<Record<string, unknown> | MarketDataError> {
   try {
     const q = await withRetry(
-      () => yf.quote(ticker.toUpperCase()) as Promise<Record<string, unknown>>
+      () => yf.quote(ticker.toUpperCase()) as Promise<Record<string, unknown> | null>
     );
-    return q;
+    if (q == null || q.symbol == null) return notFoundError(ticker);
+    return q as Record<string, unknown>;
   } catch (err) {
+    const e = err as Error;
+    if (e.name === "FailedYahooValidationError" || e.name === "HTTPError") {
+      return notFoundError(ticker);
+    }
     console.error("[marketData.getQuote]", ticker, err);
     return dataError("Quote data temporarily unavailable");
   }
@@ -47,8 +56,11 @@ export async function getChart(
 ): Promise<{ quotes: unknown[] } | MarketDataError> {
   try {
     const result = await yf.chart(ticker.toUpperCase(), { period1, interval });
+    if (result == null || result.quotes == null) return dataError("No chart data available");
     return result as { quotes: unknown[] };
   } catch (err) {
+    const e = err as Error;
+    if (e.name === "FailedYahooValidationError") return notFoundError(ticker);
     console.error("[marketData.getChart]", ticker, err);
     return dataError("Price history temporarily unavailable");
   }
@@ -88,8 +100,11 @@ export async function getQuoteSummary(
 ): Promise<Record<string, unknown> | MarketDataError> {
   try {
     const result = await yf.quoteSummary(ticker.toUpperCase(), { modules });
+    if (result == null) return notFoundError(ticker);
     return result as Record<string, unknown>;
   } catch (err) {
+    const e = err as Error;
+    if (e.name === "FailedYahooValidationError") return notFoundError(ticker);
     console.error("[marketData.getQuoteSummary]", ticker, err);
     return dataError("Summary data temporarily unavailable");
   }

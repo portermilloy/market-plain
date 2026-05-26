@@ -45,7 +45,8 @@ interface QuoteData {
 type QuoteState =
   | { status: "loading" }
   | { status: "ok"; data: QuoteData }
-  | { status: "error" };
+  | { status: "error" }
+  | { status: "notFound" };
 
 interface HistoryPoint {
   date: string;
@@ -127,10 +128,14 @@ function fetchQuote(
 ) {
   fetch(`/api/quote?ticker=${ticker}`)
     .then((r) => r.json())
-    .then((data: QuoteData & { error?: string; fallback?: boolean }) => {
+    .then((data: QuoteData & { error?: string; fallback?: boolean; notFound?: boolean }) => {
       if (data.error) {
-        onFallback?.(data.fallback === true);
-        setQuotes((prev) => ({ ...prev, [ticker]: { status: "error" } }));
+        if (data.notFound) {
+          setQuotes((prev) => ({ ...prev, [ticker]: { status: "notFound" } }));
+        } else {
+          onFallback?.(data.fallback === true);
+          setQuotes((prev) => ({ ...prev, [ticker]: { status: "error" } }));
+        }
       } else {
         onFallback?.(false);
         setQuotes((prev) => ({ ...prev, [ticker]: { status: "ok", data } }));
@@ -670,6 +675,27 @@ export default function Watchlist({
                     </div>
                   </div>
                 </div>
+              </li>
+            );
+          }
+
+          if (quoteState.status === "notFound") {
+            return (
+              <li
+                key={ticker}
+                className="px-4 py-3 flex items-center justify-between group"
+              >
+                <div className="flex flex-col">
+                  <span className="text-sm font-medium text-zinc-400">{ticker}</span>
+                  <span className="text-xs text-zinc-600">Not found or delisted</span>
+                </div>
+                <button
+                  onClick={() => removeTicker(ticker)}
+                  className="text-zinc-600 hover:text-red-400 transition-colors"
+                  aria-label={`Remove ${ticker}`}
+                >
+                  ✕
+                </button>
               </li>
             );
           }

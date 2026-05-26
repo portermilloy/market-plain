@@ -17,7 +17,7 @@ export async function GET(request: Request) {
   const q = await getQuote(ticker);
 
   if (isDataError(q)) {
-    return Response.json(q, { status: 502 });
+    return Response.json(q, { status: q.notFound ? 404 : 502 });
   }
 
   return Response.json({

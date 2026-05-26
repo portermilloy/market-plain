@@ -43,7 +43,7 @@
 *Any order*
 
 - [x] **18** — Create `app/lib/marketData.ts` abstraction over yahoo-finance2 with structured error fallback
-- [ ] **19** — Add null checks for delisted/invalid tickers across all API routes; user-friendly 404 messages
+- [x] **19** — Add null checks for delisted/invalid tickers across all API routes; user-friendly 404 messages
 - [ ] **20** — Add amber "prices may be delayed up to 15 minutes" note on Crypto page and crypto results in StockSearch
 - [ ] **21** — Add server-side in-memory cache (`app/lib/cache.ts`) for quote, movers, and history routes — do this before sharing publicly to prevent yahoo-finance2 throttling under traffic spikes
 - [ ] **22** — Create `useVisibilityRefresh` hook; replace all raw `setInterval` calls across components
