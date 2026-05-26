@@ -4,6 +4,7 @@ import { Fragment, useEffect, useState } from "react";
 import { generateAuthToken } from "../lib/authToken";
 import { getRefreshInterval } from "../lib/marketHours";
 import { useIsPro, useProToken } from "../context/ProContext";
+import FallbackBanner from "./FallbackBanner";
 import {
   Area,
   AreaChart,
@@ -714,6 +715,7 @@ export default function StockSearch() {
   const [input, setInput] = useState("");
   const [ticker, setTicker] = useState<string | null>(null);
   const [quote, setQuote] = useState<QuoteState>({ status: "idle" });
+  const [dataFallback, setDataFallback] = useState(false);
   const [range, setRange] = useState<Range>("1d");
   const [chart, setChart] = useState<ChartState>({ status: "idle" });
 
@@ -775,9 +777,14 @@ export default function StockSearch() {
 
     fetch(`/api/quote?ticker=${sym}`)
       .then((r) => r.json())
-      .then((data: QuoteData & { error?: string }) => {
-        if (data.error) setQuote({ status: "error" });
-        else setQuote({ status: "ok", data });
+      .then((data: QuoteData & { error?: string; fallback?: boolean }) => {
+        if (data.error) {
+          setDataFallback(data.fallback === true);
+          setQuote({ status: "error" });
+        } else {
+          setDataFallback(false);
+          setQuote({ status: "ok", data });
+        }
       })
       .catch(() => setQuote({ status: "error" }));
 
@@ -857,6 +864,8 @@ export default function StockSearch() {
           onClearCompare={clearCompare}
         />
       )}
+
+      {dataFallback && <FallbackBanner />}
 
       {quote.status === "error" && (
         <div className="rounded-lg border border-zinc-800 px-5 py-4 flex items-center justify-between">

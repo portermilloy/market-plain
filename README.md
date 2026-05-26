@@ -45,8 +45,16 @@ Copy `.env.example` to `.env.local` and fill in all values before deploying. In 
 | --- | --- |
 | `ANTHROPIC_API_KEY` | Anthropic API key for AI features |
 | `NEXT_PUBLIC_MARKET_PLAIN_API_SECRET` | 32-byte hex secret for HMAC request signing — generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
-| `PRO_BYPASS_TOKENS` | Comma-separated Pro access tokens until Stripe is live |
+| `PRO_BYPASS_TOKENS` | Comma-separated Pro access tokens for manual tester access |
+| `PRO_TOKEN_SECRET` | Server-only 32-byte hex secret for signing Stripe Pro tokens — never expose to the client |
+| `STRIPE_SECRET_KEY` | Stripe secret key from the Stripe dashboard |
+| `STRIPE_WEBHOOK_SECRET` | Stripe webhook signing secret for `/api/webhook` |
+| `STRIPE_PRICE_ID` | Price ID of the Market Plain Pro subscription product in Stripe |
 | `REDIS_URL` | Redis connection string for production rate limiting (see below) |
+
+### Data source
+
+Market Plain uses [yahoo-finance2](https://github.com/gadicc/node-yahoo-finance2) for all market data. **This is an unofficial library and is not affiliated with Yahoo Finance.** Yahoo may rate-limit or break the API without notice. If data stops loading, check the yahoo-finance2 GitHub issues for known outages. When Yahoo Finance is unavailable, the app shows an amber banner rather than a broken UI.
 
 ### Redis rate limiting
 

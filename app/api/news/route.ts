@@ -1,7 +1,5 @@
-import YahooFinance from "yahoo-finance2";
 import { checkDataRateLimit, getIp } from "@/app/lib/rateLimit";
-
-const yahooFinance = new YahooFinance();
+import { getNews, isDataError } from "@/app/lib/marketData";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -16,22 +14,18 @@ export async function GET(request: Request) {
     return Response.json({ error: "Too many requests" }, { status: 429 });
   }
 
-  try {
-    const result = await yahooFinance.search(ticker.toUpperCase(), {
-      newsCount: 10,
-      quotesCount: 0,
-    });
+  const result = await getNews(ticker);
 
-    const news = result.news.map((item) => ({
-      title: item.title,
-      source: item.publisher,
-      url: item.link,
-      publishedAt: item.providerPublishTime.toISOString(),
-    }));
-
-    return Response.json({ ticker: ticker.toUpperCase(), news });
-  } catch (err) {
-    console.error("[/api/news]", err);
-    return Response.json({ error: "Failed to fetch news" }, { status: 502 });
+  if (isDataError(result)) {
+    return Response.json({ ...result, ticker: ticker.toUpperCase() }, { status: 502 });
   }
+
+  const news = (result.news as Record<string, unknown>[]).map((item) => ({
+    title: item.title,
+    source: item.publisher,
+    url: item.link,
+    publishedAt: (item.providerPublishTime as Date).toISOString(),
+  }));
+
+  return Response.json({ ticker: ticker.toUpperCase(), news });
 }

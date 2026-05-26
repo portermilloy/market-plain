@@ -1,7 +1,5 @@
-import YahooFinance from "yahoo-finance2";
 import { checkDataRateLimit, getIp } from "@/app/lib/rateLimit";
-
-const yahooFinance = new YahooFinance();
+import { getQuoteSummary, isDataError } from "@/app/lib/marketData";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -16,41 +14,38 @@ export async function GET(request: Request) {
     return Response.json({ error: "Too many requests" }, { status: 429 });
   }
 
-  try {
-    const summary = await yahooFinance.quoteSummary(ticker.toUpperCase(), {
-      modules: ["earnings"],
-    });
+  const summary = await getQuoteSummary(ticker, ["earnings"]);
 
-    const e = summary.earnings;
-    if (!e) {
-      return Response.json({ error: "No earnings data available" }, { status: 404 });
-    }
-
-    const currency = e.financialCurrency ?? "USD";
-    const revQuarterly = e.financialsChart.quarterly;
-
-    const quarters = e.earningsChart.quarterly.slice(-4).map((q) => {
-      const raw = q as Record<string, unknown>;
-      const rev = revQuarterly.find((r) => r.date === q.date);
-
-      const reportedTs = typeof raw.reportedDate === "number" ? raw.reportedDate : null;
-      const difference = raw.difference != null ? parseFloat(String(raw.difference)) : null;
-      const surprisePct = raw.surprisePct != null ? parseFloat(String(raw.surprisePct)) : null;
-
-      return {
-        period: q.date,
-        reportedDate: reportedTs ? new Date(reportedTs * 1000).toISOString() : null,
-        epsEstimate: q.estimate,
-        epsActual: q.actual ?? null,
-        epsDifference: difference,
-        surprisePercent: surprisePct,
-        revenue: rev?.revenue ?? null,
-      };
-    });
-
-    return Response.json({ ticker: ticker.toUpperCase(), quarters, currency });
-  } catch (err) {
-    console.error("[/api/earnings]", err);
-    return Response.json({ error: "Failed to fetch earnings data" }, { status: 502 });
+  if (isDataError(summary)) {
+    return Response.json({ ...summary, ticker: ticker.toUpperCase() }, { status: 502 });
   }
+
+  const e = summary.earnings as Record<string, unknown> | null;
+  if (!e) {
+    return Response.json({ error: "No earnings data available" }, { status: 404 });
+  }
+
+  const currency = (e.financialCurrency ?? "USD") as string;
+  const revQuarterly = (e.financialsChart as Record<string, unknown>).quarterly as Record<string, unknown>[];
+  const earningsChart = e.earningsChart as Record<string, unknown>;
+  const earningsQuarterly = (earningsChart.quarterly as Record<string, unknown>[]).slice(-4);
+
+  const quarters = earningsQuarterly.map((q) => {
+    const rev = revQuarterly.find((r) => r.date === q.date);
+    const reportedTs = typeof q.reportedDate === "number" ? q.reportedDate : null;
+    const difference = q.difference != null ? parseFloat(String(q.difference)) : null;
+    const surprisePct = q.surprisePct != null ? parseFloat(String(q.surprisePct)) : null;
+
+    return {
+      period: q.date,
+      reportedDate: reportedTs ? new Date(reportedTs * 1000).toISOString() : null,
+      epsEstimate: q.estimate,
+      epsActual: q.actual ?? null,
+      epsDifference: difference,
+      surprisePercent: surprisePct,
+      revenue: rev?.revenue ?? null,
+    };
+  });
+
+  return Response.json({ ticker: ticker.toUpperCase(), quarters, currency });
 }

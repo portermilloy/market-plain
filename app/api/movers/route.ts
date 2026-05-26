@@ -1,6 +1,4 @@
-import YahooFinance from "yahoo-finance2";
-
-const yahooFinance = new YahooFinance();
+import { getQuote, isDataError } from "@/app/lib/marketData";
 
 const UNIVERSE = [
   "AAPL","MSFT","NVDA","TSLA","GOOGL","AMZN","META","JPM","V","UNH",
@@ -24,14 +22,12 @@ export async function GET() {
     return Response.json({ gainers: cache.gainers, losers: cache.losers });
   }
 
-  const settled = await Promise.allSettled(
-    UNIVERSE.map((t) =>
-      yahooFinance.quote(t) as Promise<Record<string, unknown>>
-    )
-  );
+  const settled = await Promise.allSettled(UNIVERSE.map((t) => getQuote(t)));
 
   const valid: MoverItem[] = settled
-    .filter((r): r is PromiseFulfilledResult<Record<string, unknown>> => r.status === "fulfilled")
+    .filter((r): r is PromiseFulfilledResult<Record<string, unknown>> =>
+      r.status === "fulfilled" && !isDataError(r.value)
+    )
     .map((r) => r.value)
     .filter((q) => q.regularMarketChangePercent != null)
     .map((q) => ({
@@ -41,6 +37,13 @@ export async function GET() {
       changePercent: q.regularMarketChangePercent as number,
     }))
     .sort((a, b) => (b.changePercent ?? 0) - (a.changePercent ?? 0));
+
+  if (valid.length === 0) {
+    return Response.json(
+      { error: true, message: "Market data temporarily unavailable", fallback: true },
+      { status: 502 }
+    );
+  }
 
   const gainers = valid.slice(0, 5);
   const losers = [...valid].reverse().slice(0, 5);

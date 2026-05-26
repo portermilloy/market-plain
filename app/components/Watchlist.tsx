@@ -4,6 +4,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { generateAuthToken } from "../lib/authToken";
 import { getRefreshInterval } from "../lib/marketHours";
 import { useIsPro, useProToken } from "../context/ProContext";
+import FallbackBanner from "./FallbackBanner";
 import {
   Area,
   Bar,
@@ -121,14 +122,17 @@ function earningsSoon(iso: string | null): boolean {
 
 function fetchQuote(
   ticker: string,
-  setQuotes: React.Dispatch<React.SetStateAction<Record<string, QuoteState>>>
+  setQuotes: React.Dispatch<React.SetStateAction<Record<string, QuoteState>>>,
+  onFallback?: (v: boolean) => void
 ) {
   fetch(`/api/quote?ticker=${ticker}`)
     .then((r) => r.json())
-    .then((data: QuoteData & { error?: string }) => {
+    .then((data: QuoteData & { error?: string; fallback?: boolean }) => {
       if (data.error) {
+        onFallback?.(data.fallback === true);
         setQuotes((prev) => ({ ...prev, [ticker]: { status: "error" } }));
       } else {
+        onFallback?.(false);
         setQuotes((prev) => ({ ...prev, [ticker]: { status: "ok", data } }));
       }
     })
@@ -378,6 +382,7 @@ export default function Watchlist({
   const [earningsData, setEarningsData] = useState<Record<string, EarningsState>>({});
   const [earningsExplanations, setEarningsExplanations] = useState<Record<string, string>>({});
   const [earningsExplainStatuses, setEarningsExplainStatuses] = useState<Record<string, "idle" | "loading" | "error">>({});
+  const [dataFallback, setDataFallback] = useState(false);
   const [alerts, setAlerts] = useState<Record<string, { price: number; direction: "above" | "below" }>>({});
   const alertsRef = useRef(alerts);
   const [popoverTicker, setPopoverTicker] = useState<string | null>(null);
@@ -399,7 +404,7 @@ export default function Watchlist({
       Object.fromEntries(tickers.map((t) => [t, { status: "loading" as const }]))
     );
     tickers.forEach((ticker) => {
-      fetchQuote(ticker, setQuotes);
+      fetchQuote(ticker, setQuotes, (v) => { if (v) setDataFallback(true); });
       fetchHistory(ticker, setHistory);
     });
   }, [tickers]);
@@ -408,7 +413,7 @@ export default function Watchlist({
   useEffect(() => {
     if (tickers.length === 0) return;
     const interval = setInterval(() => {
-      tickers.forEach((ticker) => fetchQuote(ticker, setQuotes));
+      tickers.forEach((ticker) => fetchQuote(ticker, setQuotes, (v) => { if (v) setDataFallback(true); }));
     }, getRefreshInterval(60_000));
     return () => clearInterval(interval);
   }, [tickers]);
@@ -637,6 +642,11 @@ export default function Watchlist({
           Watchlist
         </h2>
       </div>
+      {dataFallback && (
+        <div className="px-4 pt-3">
+          <FallbackBanner />
+        </div>
+      )}
 
       <ul className="divide-y divide-zinc-800">
         {tickers.map((ticker) => {

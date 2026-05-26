@@ -1,6 +1,5 @@
-import YahooFinance from "yahoo-finance2";
-
-const yahooFinance = new YahooFinance();
+import { checkDataRateLimit, getIp } from "@/app/lib/rateLimit";
+import { getChart, isDataError } from "@/app/lib/marketData";
 
 const RANGES: Record<string, { days: number | null; interval: "5m" | "1h" | "1d" }> = {
   "1d":   { days: null, interval: "5m" },
@@ -28,6 +27,11 @@ export async function GET(request: Request) {
     );
   }
 
+  const { allowed } = await checkDataRateLimit(getIp(request));
+  if (!allowed) {
+    return Response.json({ error: "Too many requests" }, { status: 429 });
+  }
+
   // For 1D, look back 4 days so weekends and holidays always resolve to the
   // most recent trading session rather than returning empty data.
   const period1 = config.days === null
@@ -38,69 +42,63 @@ export async function GET(request: Request) {
       })()
     : (() => { const d = new Date(); d.setDate(d.getDate() - config.days!); return d; })();
 
-  try {
-    const result = await yahooFinance.chart(ticker.toUpperCase(), {
-      period1,
-      interval: config.interval,
-    });
+  const result = await getChart(ticker, period1, config.interval);
 
-    let rawQuotes = result.quotes.filter((q) => q.close !== null);
+  if (isDataError(result)) {
+    return Response.json({ ...result, ticker: ticker.toUpperCase(), range }, { status: 502 });
+  }
 
-    if (range === "1d") {
-      if (rawQuotes.length === 0) {
-        return Response.json({ ticker: ticker.toUpperCase(), range, data: [] });
-      }
+  let rawQuotes = (result.quotes as Record<string, unknown>[]).filter(
+    (q) => q.close !== null
+  );
 
-      // Find the most recent date that has actual regular-hours data (>= 9:30 AM ET).
-      // This prevents pre-market quotes from a future date from shadowing the last
-      // full trading session — which is the root cause of the chart going blank
-      // after midnight when Yahoo returns early pre-market bars for "today".
-      const regularQuotes = rawQuotes.filter((q) => {
-        const et = new Date(q.date.toLocaleString("en-US", { timeZone: "America/New_York" }));
-        return et.getHours() * 60 + et.getMinutes() >= 9 * 60 + 30;
-      });
-
-      if (regularQuotes.length === 0) {
-        return Response.json({ ticker: ticker.toUpperCase(), range, data: [] });
-      }
-
-      const mostRecentDate = regularQuotes.reduce((latest, q) => {
-        const d = q.date.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
-        return d > latest ? d : latest;
-      }, "");
-
-      rawQuotes = rawQuotes.filter((q) => {
-        const d = q.date.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
-        if (d !== mostRecentDate) return false;
-        const et = new Date(q.date.toLocaleString("en-US", { timeZone: "America/New_York" }));
-        const mins = et.getHours() * 60 + et.getMinutes();
-        return mins >= 9 * 60 + 30;
-      });
+  if (range === "1d") {
+    if (rawQuotes.length === 0) {
+      return Response.json({ ticker: ticker.toUpperCase(), range, data: [] });
     }
 
-    const data = rawQuotes.map((q) => {
-      const date = config.interval !== "1d"
-        ? q.date.toISOString()
-        : q.date.toISOString().slice(0, 10);
-
-      let session: "regular" | "extended" | undefined;
-      if (range === "1d") {
-        const et = new Date(q.date.toLocaleString("en-US", { timeZone: "America/New_York" }));
-        const mins = et.getHours() * 60 + et.getMinutes();
-        session = mins < 16 * 60 ? "regular" : "extended";
-      }
-
-      return {
-        date,
-        close: q.close as number,
-        ...(q.volume != null && { volume: q.volume }),
-        ...(session && { session }),
-      };
+    const regularQuotes = rawQuotes.filter((q) => {
+      const et = new Date((q.date as Date).toLocaleString("en-US", { timeZone: "America/New_York" }));
+      return et.getHours() * 60 + et.getMinutes() >= 9 * 60 + 30;
     });
 
-    return Response.json({ ticker: ticker.toUpperCase(), range, data });
-  } catch (err) {
-    console.error("[/api/history]", err);
-    return Response.json({ error: "Failed to fetch history" }, { status: 502 });
+    if (regularQuotes.length === 0) {
+      return Response.json({ ticker: ticker.toUpperCase(), range, data: [] });
+    }
+
+    const mostRecentDate = regularQuotes.reduce((latest, q) => {
+      const d = (q.date as Date).toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+      return d > latest ? d : latest;
+    }, "");
+
+    rawQuotes = rawQuotes.filter((q) => {
+      const d = (q.date as Date).toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+      if (d !== mostRecentDate) return false;
+      const et = new Date((q.date as Date).toLocaleString("en-US", { timeZone: "America/New_York" }));
+      const mins = et.getHours() * 60 + et.getMinutes();
+      return mins >= 9 * 60 + 30;
+    });
   }
+
+  const data = rawQuotes.map((q) => {
+    const date = config.interval !== "1d"
+      ? (q.date as Date).toISOString()
+      : (q.date as Date).toISOString().slice(0, 10);
+
+    let session: "regular" | "extended" | undefined;
+    if (range === "1d") {
+      const et = new Date((q.date as Date).toLocaleString("en-US", { timeZone: "America/New_York" }));
+      const mins = et.getHours() * 60 + et.getMinutes();
+      session = mins < 16 * 60 ? "regular" : "extended";
+    }
+
+    return {
+      date,
+      close: q.close as number,
+      ...(q.volume != null && { volume: q.volume }),
+      ...(session && { session }),
+    };
+  });
+
+  return Response.json({ ticker: ticker.toUpperCase(), range, data });
 }
